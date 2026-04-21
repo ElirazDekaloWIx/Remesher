@@ -352,8 +352,12 @@
             </select>
         </div>
         <div class="control-group">
-            <label>Exposure: <span id="exp-val">1.0</span></label>
-            <input type="range" id="exposure" min="0.1" max="3" value="1.0" step="0.1">
+            <label>Exposure: <span id="exp-val">1.4</span></label>
+            <input type="range" id="exposure" min="0.1" max="3" value="1.4" step="0.1">
+        </div>
+        <div class="control-group">
+            <label>Light Rot: <span id="light-rot-val">0</span>°</label>
+            <input type="range" id="light-rot" min="-180" max="180" value="0" step="5">
         </div>
     </div>
 
@@ -437,8 +441,7 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
-        import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
-        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+        import { toCreasedNormals, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
         import { WebIO, PropertyType } from '@gltf-transform/core';
         import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
         import { simplify, weld, dedup, prune, textureCompress, resample } from '@gltf-transform/functions';
@@ -474,7 +477,7 @@
             renderer.setSize(w, h);
             renderer.outputColorSpace = THREE.SRGBColorSpace;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.0;
+            renderer.toneMappingExposure = 1.4;
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             panel.appendChild(renderer.domElement);
@@ -483,29 +486,56 @@
             controls.enableDamping = true;
             controls.dampingFactor = 0.1;
 
-            // PMREM generator for IBL
+            // PMREM generator for IBL (for optional external HDRIs)
             const pmrem = new THREE.PMREMGenerator(renderer);
-            pmrem.compileEquirectangularShader();
+            pmrem.compileCubemapShader();
 
-            // Neutral fallback environment (from RoomEnvironment)
-            const roomEnv = new RoomEnvironment();
-            const neutralEnv = pmrem.fromScene(roomEnv, 0.04).texture;
+            // ---- Procedural cube-map environment with 4 coloured point lights ----
+            // Gives a warm/cool PBR reflection look without any external HDRI.
+            const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256);
+            const cubeCamera = new THREE.CubeCamera(0.1, 100, cubeRenderTarget);
+            const envScene = new THREE.Scene();
+            envScene.background = new THREE.Color(0x333344);
+            [
+                { color: 0xffffff, intensity: 8, pos: [0, 10, 5] },
+                { color: 0xfff5e0, intensity: 4, pos: [8, 4, 2] },
+                { color: 0xd0e0ff, intensity: 3, pos: [-6, 2, -4] },
+                { color: 0xffffff, intensity: 2, pos: [0, -8, 0] },
+            ].forEach(({ color, intensity, pos }) => {
+                const l = new THREE.PointLight(color, intensity, 100);
+                l.position.set(...pos);
+                envScene.add(l);
+            });
+            envScene.add(cubeCamera);
+            cubeCamera.update(renderer, envScene);
+            const neutralEnv = pmrem.fromCubemap(cubeRenderTarget.texture).texture;
+            neutralEnv.mapping = THREE.EquirectangularReflectionMapping;
             scene.environment = neutralEnv;
 
-            // Soft key light for shadows (environment handles diffuse)
-            const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
-            keyLight.position.set(5, 8, 6);
-            keyLight.castShadow = true;
-            keyLight.shadow.mapSize.set(1024, 1024);
-            keyLight.shadow.camera.near = 0.1;
-            keyLight.shadow.camera.far = 50;
-            keyLight.shadow.camera.left = -10;
-            keyLight.shadow.camera.right = 10;
-            keyLight.shadow.camera.top = 10;
-            keyLight.shadow.camera.bottom = -10;
-            keyLight.shadow.bias = -0.0005;
-            keyLight.shadow.normalBias = 0.02;
-            scene.add(keyLight);
+            // ---- Six-light rig: ambient + main/fill/rim/back/bottom ----
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const mainLight = new THREE.DirectionalLight(0xffffff, 2.5);
+            mainLight.position.set(5, 8, 5);
+            mainLight.castShadow = true;
+            mainLight.shadow.mapSize.set(2048, 2048);
+            mainLight.shadow.camera.near = 0.1;
+            mainLight.shadow.camera.far = 50;
+            mainLight.shadow.bias = -0.0005;
+            mainLight.shadow.normalBias = 0.02;
+            scene.add(mainLight);
+            const fillLight = new THREE.DirectionalLight(0xc67b5c, 0.8);   // warm fill
+            fillLight.position.set(-3, 4, -3);
+            scene.add(fillLight);
+            const rimLight = new THREE.DirectionalLight(0xaaaaff, 0.6);    // blue rim
+            rimLight.position.set(0, 2, -5);
+            scene.add(rimLight);
+            const backLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            backLight.position.set(-2, 3, -6);
+            scene.add(backLight);
+            const bottomLight = new THREE.DirectionalLight(0xffffff, 0.4);
+            bottomLight.position.set(0, -5, 0);
+            scene.add(bottomLight);
 
             // Ground plane for shadows
             const groundGeo = new THREE.PlaneGeometry(50, 50);
@@ -514,6 +544,9 @@
             ground.rotation.x = -Math.PI / 2;
             ground.receiveShadow = true;
             scene.add(ground);
+
+            // Light rotation offset (controlled by exposure of sceneRef.setLightOffset)
+            let lightOffset = 0;
 
             let model = null;
 
@@ -536,6 +569,19 @@
                     if (o.isMesh) {
                         o.castShadow = true;
                         o.receiveShadow = true;
+                        // Recompute smooth normals — many models arrive with flat/broken normals
+                        if (o.geometry) {
+                            o.geometry.deleteAttribute('normal');
+                            o.geometry.computeVertexNormals();
+                        }
+                        // PBR look: smooth shading, double-sided, env intensity
+                        const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+                        mats.forEach(m => {
+                            m.flatShading = false;
+                            m.envMapIntensity = 1.0;
+                            m.side = THREE.DoubleSide;
+                            m.needsUpdate = true;
+                        });
                     }
                 });
                 scene.add(model);
@@ -571,6 +617,7 @@
 
             function getModel() { return model; }
             function setExposure(v) { renderer.toneMappingExposure = v; }
+            function setLightOffset(v) { lightOffset = v; }
 
             function resize() {
                 const w = panel.clientWidth;
@@ -583,10 +630,16 @@
             (function animate() {
                 requestAnimationFrame(animate);
                 controls.update();
+                // Rotate the light rig around Y by lightOffset
+                const cos = Math.cos(lightOffset), sin = Math.sin(lightOffset);
+                mainLight.position.set(5 * cos - 5 * sin, 8, 5 * sin + 5 * cos);
+                fillLight.position.set(-3 * cos + 3 * sin, 4, -3 * sin - 3 * cos);
+                rimLight.position.set(5 * sin, 2, -5 * cos);
+                backLight.position.set(-2 * cos + 6 * sin, 3, -2 * sin - 6 * cos);
                 renderer.render(scene, camera);
             })();
 
-            return { scene, camera, renderer, pmrem, setModel, setEnvironment, setExposure, getModel, resize };
+            return { scene, camera, renderer, pmrem, setModel, setEnvironment, setExposure, setLightOffset, getModel, resize };
         }
 
         const originalView = setupScene('original-panel');
@@ -744,12 +797,13 @@
                 }
                 try {
                     const src = o.userData._origGeometry;
-                    // toCreasedNormals requires a non-indexed geometry with a position attribute
-                    const nonIndexed = src.index ? src.toNonIndexed() : src.clone();
-                    const creased = toCreasedNormals(nonIndexed, angleRad);
+                    // Weld coincident vertices first so the crease edge-walk finds real
+                    // shared edges (many GLBs arrive with duplicated verts per face).
+                    const merged = mergeVertices(src.clone());
+                    const creased = toCreasedNormals(merged, angleRad);
                     if (o.geometry !== o.userData._origGeometry) o.geometry.dispose();
                     o.geometry = creased;
-                    nonIndexed.dispose();
+                    merged.dispose();
                 } catch (e) {
                     console.warn('crease normals failed for mesh', o.name, e);
                 }
@@ -779,6 +833,15 @@
             document.getElementById('exp-val').textContent = v.toFixed(1);
             originalView.setExposure(v);
             processedView.setExposure(v);
+        });
+
+        // Light rotation (rotates the 6-light rig around Y)
+        document.getElementById('light-rot').addEventListener('input', e => {
+            const deg = parseFloat(e.target.value);
+            document.getElementById('light-rot-val').textContent = e.target.value;
+            const rad = deg * Math.PI / 180;
+            originalView.setLightOffset(rad);
+            processedView.setLightOffset(rad);
         });
 
         // Load initial environment
