@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remesher - Model Gallery</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #16213e;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #0f3460;
+            flex-shrink: 0;
+        }
+        .header h1 { font-size: 20px; color: #e94560; font-weight: 700; }
+        .header-controls { display: flex; gap: 12px; align-items: center; }
+        .btn {
+            padding: 8px 20px; border: none; border-radius: 6px;
+            font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-secondary { background: #533483; color: white; }
+        .btn-secondary:hover { background: #6a4299; }
+        .btn-primary { background: #e94560; color: white; }
+        .btn-primary:hover { background: #c73652; }
+
+        .toolbar {
+            background: #16213e;
+            padding: 12px 24px;
+            display: flex; align-items: center; gap: 12px;
+            border-bottom: 1px solid #0f3460;
+            flex-shrink: 0;
+        }
+        .toolbar input {
+            background: #0f3460; color: #eee; border: 1px solid #533483;
+            border-radius: 6px; padding: 8px 12px; font-size: 13px; outline: none;
+            flex: 1;
+        }
+        .toolbar input:focus { border-color: #e94560; }
+        .toolbar .info { font-size: 12px; color: #888; white-space: nowrap; }
+
+        .main { flex: 1; overflow-y: auto; padding: 24px; }
+
+        /* Group */
+        .group { margin-bottom: 28px; }
+        .group-title {
+            font-size: 13px; color: #e94560; font-weight: 600;
+            margin-bottom: 12px; padding-bottom: 6px;
+            border-bottom: 1px solid #0f3460;
+            font-family: 'Consolas', monospace;
+            direction: ltr;
+        }
+
+        /* Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            background: #16213e;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #0f3460;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .card:hover { border-color: #e94560; transform: translateY(-2px); }
+        .card.active { border-color: #e94560; box-shadow: 0 0 12px #e9456044; }
+
+        .card-preview {
+            width: 100%; height: 180px;
+            background: #111827;
+            position: relative;
+        }
+        .card-preview canvas {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+        }
+        .card-spinner {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .card-spinner::after {
+            content: ''; width: 24px; height: 24px;
+            border: 3px solid #333; border-top-color: #e94560;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .card-info {
+            padding: 10px 12px;
+            direction: ltr;
+        }
+        .card-name {
+            font-size: 13px; font-weight: 600; color: #eee;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .card-meta {
+            font-size: 11px; color: #888; margin-top: 4px;
+            display: flex; justify-content: space-between;
+        }
+
+        /* Expanded preview modal */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+            z-index: 1000; align-items: center; justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-content {
+            background: #16213e; border-radius: 12px; overflow: hidden;
+            width: 80vw; height: 80vh; max-width: 1200px;
+            display: flex; flex-direction: column;
+            border: 1px solid #0f3460;
+        }
+        .modal-header {
+            padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 1px solid #0f3460;
+        }
+        .modal-header h2 { font-size: 16px; color: #eee; direction: ltr; }
+        .modal-viewer { flex: 1; position: relative; }
+        .modal-viewer canvas { width: 100% !important; height: 100% !important; display: block; }
+        .modal-stats {
+            position: absolute; bottom: 12px; left: 12px;
+            background: rgba(0,0,0,0.7); padding: 8px 14px;
+            border-radius: 6px; font-size: 12px; direction: ltr; line-height: 1.6;
+        }
+        .close-btn {
+            background: none; border: none; color: #888; font-size: 24px;
+            cursor: pointer; padding: 0 8px;
+        }
+        .close-btn:hover { color: #e94560; }
+
+        .empty-state {
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; height: 300px; color: #555;
+        }
+        .empty-state p { font-size: 14px; margin-top: 12px; }
+
+        .toast-container {
+            position: fixed; top: 16px; right: 16px; z-index: 2000;
+            display: flex; flex-direction: column; gap: 8px; direction: ltr;
+        }
+        .toast {
+            padding: 12px 20px; border-radius: 8px; font-size: 13px; font-weight: 500;
+            color: white; max-width: 400px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            animation: toastIn 0.3s ease, toastOut 0.3s ease 4.7s forwards;
+        }
+        .toast-error { background: #c0392b; }
+        .toast-success { background: #0a8754; }
+        @keyframes toastIn { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }
+        @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+
+        /* Hide/show controls */
+        .card.hidden-model { opacity: 0.35; }
+        .card.hidden-model:hover { opacity: 0.6; }
+        .card .hide-btn {
+            position: absolute; top: 6px; right: 6px; z-index: 10;
+            background: rgba(0,0,0,0.6); border: none; color: #ccc;
+            width: 26px; height: 26px; border-radius: 50%;
+            font-size: 14px; cursor: pointer; display: none;
+            align-items: center; justify-content: center; line-height: 1;
+        }
+        .card:hover .hide-btn { display: flex; }
+        .card .hide-btn:hover { background: #e94560; color: white; }
+        .card-preview { position: relative; }
+
+        .filter-btns { display: flex; gap: 4px; }
+        .filter-btns button {
+            padding: 5px 12px; border: 1px solid #0f3460; background: transparent;
+            color: #888; border-radius: 4px; font-size: 12px; cursor: pointer;
+        }
+        .filter-btns button.active { background: #533483; color: white; border-color: #533483; }
+    </style>
+</head>
+<body>
+
+<div class="toast-container" id="toast-container"></div>
+
+<div class="header">
+    <h1>Remesher — Gallery</h1>
+    <div class="header-controls">
+        <a href="/" class="btn btn-secondary" style="text-decoration:none">Single</a>
+        <a href="/batch" class="btn btn-secondary" style="text-decoration:none">Batch</a>
+    </div>
+</div>
+
+<div class="toolbar">
+    <input type="text" id="folder-input" placeholder="C:\path\to\models folder">
+    <button class="btn btn-secondary" onclick="browseFolder()" style="padding:8px 14px;">...</button>
+    <button class="btn btn-primary" onclick="scanGallery()">Scan</button>
+    <div class="filter-btns">
+        <button id="filter-all" class="active" onclick="setFilter('all')">All</button>
+        <button id="filter-visible" onclick="setFilter('visible')">Visible</button>
+        <button id="filter-hidden" onclick="setFilter('hidden')">Hidden</button>
+    </div>
+    <button class="btn btn-secondary" onclick="saveState()" style="font-size:12px">Save State</button>
+    <button class="btn btn-secondary" onclick="loadState()" style="font-size:12px">Load State</button>
+    <span class="info" id="scan-info"></span>
+</div>
+
+<div class="main" id="main">
+    <div class="empty-state" id="empty-state">
+        <p>Enter a folder path and click Scan to browse models</p>
+    </div>
+</div>
+
+<!-- Expanded preview modal -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modal-title">Model</h2>
+            <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-viewer" id="modal-viewer">
+            <canvas id="modal-canvas"></canvas>
+            <div class="modal-stats" id="modal-stats"></div>
+        </div>
+    </div>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+let galleryFolder = '';
+let models = [];
+let hiddenModels = new Set(); // paths of hidden models
+let currentFilter = 'all'; // 'all', 'visible', 'hidden'
+let modalViewer = null;
+const loader = new GLTFLoader();
+
+// Single shared renderer for all thumbnails — avoids WebGL context limit
+const thumbCanvas = document.createElement('canvas');
+thumbCanvas.width = 400;
+thumbCanvas.height = 360;
+const thumbRenderer = new THREE.WebGLRenderer({ canvas: thumbCanvas, antialias: true, alpha: true });
+thumbRenderer.setPixelRatio(1);
+thumbRenderer.setSize(400, 360);
+thumbRenderer.outputColorSpace = THREE.SRGBColorSpace;
+thumbRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+thumbRenderer.toneMappingExposure = 1.0;
+
+// Queue for sequential thumbnail rendering
+let thumbQueue = [];
+let thumbProcessing = false;
+
+function showToast(msg, type) {
+    const c = document.getElementById('toast-container');
+    const t = document.createElement('div');
+    t.className = 'toast toast-' + type;
+    t.textContent = msg;
+    c.appendChild(t);
+    setTimeout(() => t.remove(), 5000);
+}
+
+// Browse folder
+window.browseFolder = async function() {
+    try {
+        const resp = await fetch('/api/browse-folder', { method: 'POST' });
+        const data = await resp.json();
+        if (data.folder) {
+            document.getElementById('folder-input').value = data.folder;
+            scanGallery();
+        }
+    } catch (e) { showToast('Browse failed', 'error'); }
+};
+
+// Scan gallery
+window.scanGallery = async function() {
+    const folder = document.getElementById('folder-input').value.trim();
+    if (!folder) return;
+
+    // Cancel pending thumbnail queue
+    thumbQueue = [];
+
+    try {
+        const resp = await fetch('/api/gallery/scan', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ folder }),
+        });
+        const data = await resp.json();
+        if (data.error) { showToast(data.error, 'error'); return; }
+
+        galleryFolder = data.folder;
+        models = data.models;
+        // Try to auto-load saved state
+        await autoLoadState();
+        updateScanInfo();
+        renderGallery();
+    } catch (e) {
+        showToast('Scan failed: ' + e.message, 'error');
+    }
+};
+
+function updateScanInfo() {
+    const visible = models.filter(m => !hiddenModels.has(m.path)).length;
+    const hidden = hiddenModels.size;
+    document.getElementById('scan-info').textContent =
+        `${models.length} models | ${visible} visible | ${hidden} hidden`;
+}
+
+window.setFilter = function(f) {
+    currentFilter = f;
+    document.querySelectorAll('.filter-btns button').forEach(b => b.classList.remove('active'));
+    document.getElementById('filter-' + f).classList.add('active');
+    renderGallery();
+};
+
+function toggleHide(model, e) {
+    e.stopPropagation();
+    if (hiddenModels.has(model.path)) {
+        hiddenModels.delete(model.path);
+    } else {
+        hiddenModels.add(model.path);
+    }
+    updateScanInfo();
+    renderGallery();
+}
+
+window.saveState = async function() {
+    if (!galleryFolder) return;
+    try {
+        const resp = await fetch('/api/gallery/save-state', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ folder: galleryFolder, hidden: [...hiddenModels] }),
+        });
+        const data = await resp.json();
+        if (data.ok) showToast('State saved', 'success');
+        else showToast(data.error || 'Save failed', 'error');
+    } catch (e) { showToast('Save failed', 'error'); }
+};
+
+window.loadState = async function() {
+    if (!galleryFolder) return;
+    try {
+        const resp = await fetch('/api/gallery/load-state', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ folder: galleryFolder }),
+        });
+        const data = await resp.json();
+        if (data.hidden) {
+            hiddenModels = new Set(data.hidden);
+            updateScanInfo();
+            renderGallery();
+            showToast(`Loaded state (${hiddenModels.size} hidden)`, 'success');
+        } else {
+            showToast('No saved state found', 'error');
+        }
+    } catch (e) { showToast('Load failed', 'error'); }
+};
+
+async function autoLoadState() {
+    try {
+        const resp = await fetch('/api/gallery/load-state', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ folder: galleryFolder }),
+        });
+        const data = await resp.json();
+        if (data.hidden) hiddenModels = new Set(data.hidden);
+        else hiddenModels = new Set();
+    } catch (e) { hiddenModels = new Set(); }
+}
+
+function renderGallery() {
+    const main = document.getElementById('main');
+    main.innerHTML = '';
+
+    // Filter models
+    let filtered = models;
+    if (currentFilter === 'visible') filtered = models.filter(m => !hiddenModels.has(m.path));
+    else if (currentFilter === 'hidden') filtered = models.filter(m => hiddenModels.has(m.path));
+
+    if (filtered.length === 0) {
+        main.innerHTML = '<div class="empty-state"><p>No models match this filter</p></div>';
+        return;
+    }
+
+    // Group by folder
+    const groups = new Map();
+    for (const m of filtered) {
+        const g = m.group || '(root)';
+        if (!groups.has(g)) groups.set(g, []);
+        groups.get(g).push(m);
+    }
+
+    for (const [groupName, items] of groups) {
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'group';
+
+        const title = document.createElement('div');
+        title.className = 'group-title';
+        title.textContent = groupName === '(root)' ? '/' : groupName + '/';
+        groupDiv.appendChild(title);
+
+        const grid = document.createElement('div');
+        grid.className = 'grid';
+
+        for (const model of items) {
+            const isHidden = hiddenModels.has(model.path);
+            const card = document.createElement('div');
+            card.className = 'card' + (isHidden ? ' hidden-model' : '');
+            const cardId = 'card-' + model.path.replace(/[^a-zA-Z0-9]/g, '_');
+            card.id = cardId;
+            card.onclick = () => openModal(model);
+
+            card.innerHTML = `
+                <div class="card-preview" id="preview-${cardId}">
+                    <button class="hide-btn" title="${isHidden ? 'Show' : 'Hide'}">${isHidden ? '+' : '−'}</button>
+                    <div class="card-spinner" id="spinner-${cardId}"></div>
+                </div>
+                <div class="card-info">
+                    <div class="card-name" title="${model.path}">${model.name}</div>
+                    <div class="card-meta">
+                        <span>${model.ext}</span>
+                        <span>${model.size_mb} MB</span>
+                    </div>
+                </div>
+            `;
+
+            // Bind hide button
+            card.querySelector('.hide-btn').onclick = (e) => toggleHide(model, e);
+
+            grid.appendChild(card);
+
+            // Add to thumbnail render queue
+            thumbQueue.push({ cardId, model });
+        }
+
+        groupDiv.appendChild(grid);
+        main.appendChild(groupDiv);
+    }
+
+    // Start processing thumbnail queue
+    processThumbQueue();
+}
+
+async function processThumbQueue() {
+    if (thumbProcessing) return;
+    thumbProcessing = true;
+
+    while (thumbQueue.length > 0) {
+        const { cardId, model } = thumbQueue.shift();
+        await renderThumbnail(cardId, model);
+    }
+
+    thumbProcessing = false;
+}
+
+function renderThumbnail(cardId, model) {
+    return new Promise((resolve) => {
+        const container = document.getElementById('preview-' + cardId);
+        if (!container) { resolve(); return; }
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111827);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const dl = new THREE.DirectionalLight(0xfff5e6, 1.2);
+        dl.position.set(3, 5, 4);
+        scene.add(dl);
+        const dl2 = new THREE.DirectionalLight(0xc8d8f0, 0.4);
+        dl2.position.set(-3, 2, -2);
+        scene.add(dl2);
+
+        const camera = new THREE.PerspectiveCamera(40, 400 / 360, 0.01, 100);
+
+        const url = `/api/gallery/file?folder=${encodeURIComponent(galleryFolder)}&path=${encodeURIComponent(model.path)}`;
+
+        loader.load(url, (gltf) => {
+            const obj = gltf.scene;
+            scene.add(obj);
+
+            const box = new THREE.Box3().setFromObject(obj);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const dist = maxDim * 2.0;
+            camera.position.set(center.x + dist * 0.5, center.y + dist * 0.35, center.z + dist * 0.5);
+            camera.lookAt(center);
+
+            // Render to shared canvas
+            thumbRenderer.render(scene, camera);
+
+            // Capture as static image
+            const img = document.createElement('img');
+            img.src = thumbCanvas.toDataURL('image/jpeg', 0.85);
+            img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+
+            const spinner = document.getElementById('spinner-' + cardId);
+            if (spinner) spinner.remove();
+            container.appendChild(img);
+
+            // Dispose scene to free memory
+            obj.traverse(child => {
+                if (child.isMesh) {
+                    if (child.geometry) child.geometry.dispose();
+                    const mats = Array.isArray(child.material) ? child.material : [child.material];
+                    mats.forEach(m => { if (m) { if (m.map) m.map.dispose(); m.dispose(); } });
+                }
+            });
+
+            resolve();
+        }, undefined, () => {
+            const spinner = document.getElementById('spinner-' + cardId);
+            if (spinner) spinner.innerHTML = '<span style="color:#e74c3c;font-size:11px">Failed</span>';
+            resolve();
+        });
+    });
+}
+
+// Modal expanded view
+let currentModalModel = null;
+
+function openModal(model) {
+    currentModalModel = model;
+    document.getElementById('modal').classList.add('active');
+    document.getElementById('modal-title').textContent = `${model.name} (${model.size_mb} MB)`;
+
+    if (modalViewer) {
+        cancelAnimationFrame(modalViewer.animId);
+        modalViewer.renderer.dispose();
+        modalViewer = null;
+    }
+
+    const canvas = document.getElementById('modal-canvas');
+    const container = document.getElementById('modal-viewer');
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+
+    // Better lighting for modal
+    scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+    const key = new THREE.DirectionalLight(0xfff5e6, 1.2);
+    key.position.set(5, 8, 5);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0xc8d8f0, 0.4);
+    fill.position.set(-4, 3, -3);
+    scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.3);
+    rim.position.set(0, 5, -6);
+    scene.add(rim);
+
+    const grid = new THREE.GridHelper(10, 20, 0x333355, 0x222244);
+    scene.add(grid);
+
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+    camera.position.set(2, 1.5, 2);
+
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+
+    // Resize
+    function resize() {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    const url = `/api/gallery/file?folder=${encodeURIComponent(galleryFolder)}&path=${encodeURIComponent(model.path)}`;
+
+    loader.load(url, (gltf) => {
+        const obj = gltf.scene;
+        scene.add(obj);
+
+        const box = new THREE.Box3().setFromObject(obj);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const dist = maxDim * 1.8;
+        camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.6);
+        controls.target.copy(center);
+        controls.update();
+
+        // Count geometry
+        let faces = 0, verts = 0;
+        obj.traverse(c => {
+            if (c.isMesh && c.geometry) {
+                faces += c.geometry.index ? c.geometry.index.count / 3 : c.geometry.attributes.position.count / 3;
+                verts += c.geometry.attributes.position ? c.geometry.attributes.position.count : 0;
+            }
+        });
+
+        document.getElementById('modal-stats').innerHTML =
+            `Faces: ${Math.round(faces).toLocaleString()}<br>Vertices: ${verts.toLocaleString()}<br>Size: ${model.size_mb} MB`;
+    });
+
+    function animate() {
+        const id = requestAnimationFrame(animate);
+        modalViewer.animId = id;
+        controls.update();
+        renderer.render(scene, camera);
+    }
+
+    modalViewer = { renderer, scene, camera, controls, animId: 0, resizeFn: resize };
+    animate();
+}
+
+window.closeModal = function() {
+    // Capture current camera angle as new thumbnail
+    if (modalViewer && currentModalModel) {
+        // Render one final frame at thumbnail resolution
+        const { scene, camera, renderer } = modalViewer;
+
+        // Temporarily resize to thumbnail dimensions
+        const origW = renderer.domElement.width;
+        const origH = renderer.domElement.height;
+        renderer.setSize(400, 360);
+        camera.aspect = 400 / 360;
+        camera.updateProjectionMatrix();
+
+        // Hide grid for cleaner thumbnail
+        let grid = null;
+        scene.traverse(c => { if (c.isGridHelper) { grid = c; c.visible = false; } });
+
+        // Change background to thumbnail color
+        const origBg = scene.background;
+        scene.background = new THREE.Color(0x111827);
+
+        renderer.render(scene, camera);
+
+        const dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.85);
+
+        // Restore
+        if (grid) grid.visible = true;
+        scene.background = origBg;
+
+        // Replace the thumbnail image
+        const cardId = 'card-' + currentModalModel.path.replace(/[^a-zA-Z0-9]/g, '_');
+        const container = document.getElementById('preview-' + cardId);
+        if (container) {
+            const existingImg = container.querySelector('img');
+            if (existingImg) {
+                existingImg.src = dataUrl;
+            } else {
+                const img = document.createElement('img');
+                img.src = dataUrl;
+                img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+                container.appendChild(img);
+            }
+        }
+    }
+
+    document.getElementById('modal').classList.remove('active');
+    if (modalViewer) {
+        cancelAnimationFrame(modalViewer.animId);
+        window.removeEventListener('resize', modalViewer.resizeFn);
+        modalViewer.renderer.dispose();
+        modalViewer = null;
+    }
+    currentModalModel = null;
+};
+
+// Keyboard
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Enter' && document.activeElement === document.getElementById('folder-input')) scanGallery();
+});
+</script>
+</body>
+</html>

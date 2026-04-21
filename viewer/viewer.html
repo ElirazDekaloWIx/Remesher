@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remesher - 3D Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: #111;
+            color: #eee;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            background: #1a1a2e;
+            border-left: 1px solid #0f3460;
+            flex-shrink: 0;
+            overflow-y: scroll;
+            overflow-x: hidden;
+            direction: ltr;
+        }
+        .sidebar-inner {
+            direction: rtl;
+        }
+        .sidebar::-webkit-scrollbar { width: 6px; }
+        .sidebar::-webkit-scrollbar-track { background: #111; }
+        .sidebar::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+        .sidebar::-webkit-scrollbar-thumb:hover { background: #666; }
+
+        .sidebar-header {
+            padding: 16px 20px;
+            background: #16213e;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+        .sidebar-header h1 {
+            font-size: 20px;
+            color: #e94560;
+        }
+
+        .panel {
+            border-bottom: 1px solid #0f3460;
+        }
+        .panel-header {
+            padding: 12px 20px;
+            background: #16213e;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+            transition: background 0.2s;
+        }
+        .panel-header:hover { background: #1e2d50; }
+        .panel-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #ccc;
+            letter-spacing: 0.5px;
+        }
+        .panel-arrow {
+            font-size: 10px;
+            color: #666;
+            transition: transform 0.2s;
+        }
+        .panel.collapsed .panel-arrow { transform: rotate(-90deg); }
+        .panel-body {
+            padding: 14px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .panel.collapsed .panel-body { display: none; }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 28px;
+        }
+        .control-row label {
+            font-size: 12px;
+            color: #999;
+            white-space: nowrap;
+            min-width: 80px;
+            flex-shrink: 0;
+        }
+        .control-row input[type="range"] {
+            flex: 1;
+            accent-color: #e94560;
+            min-width: 60px;
+        }
+        .control-row .value {
+            font-size: 11px;
+            color: #aaa;
+            min-width: 36px;
+            text-align: left;
+            direction: ltr;
+        }
+        select {
+            background: #0f3460;
+            color: #eee;
+            border: 1px solid #333;
+            border-radius: 5px;
+            padding: 5px 8px;
+            font-size: 12px;
+            outline: none;
+            flex: 1;
+            min-width: 0;
+            max-width: 140px;
+        }
+        select:focus { border-color: #e94560; }
+
+        .color-input {
+            width: 32px;
+            height: 24px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .btn-primary { background: #e94560; color: white; }
+        .btn-primary:hover { background: #c73652; }
+        .btn-secondary { background: #533483; color: white; }
+        .btn-secondary:hover { background: #6a4299; }
+        .btn-sm { padding: 5px 12px; font-size: 11px; }
+        .btn-block { width: 100%; }
+        .btn:disabled { background: #333; cursor: not-allowed; color: #666; }
+
+        .toggle-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .toggle-chip {
+            padding: 4px 10px;
+            border: 1px solid #333;
+            border-radius: 14px;
+            font-size: 11px;
+            cursor: pointer;
+            color: #888;
+            transition: all 0.2s;
+            background: transparent;
+        }
+        .toggle-chip:hover { border-color: #e94560; color: #ccc; }
+        .toggle-chip.active { background: #533483; border-color: #533483; color: #fff; }
+
+        /* Viewport */
+        .viewport {
+            flex: 1;
+            position: relative;
+            background: #111;
+        }
+        .viewport canvas { display: block; }
+
+        .viewport-toolbar {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            display: flex;
+            gap: 6px;
+            z-index: 10;
+            direction: ltr;
+        }
+        .toolbar-btn {
+            padding: 6px 12px;
+            background: rgba(0,0,0,0.7);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            color: #aaa;
+            font-size: 11px;
+            cursor: pointer;
+            backdrop-filter: blur(8px);
+            transition: all 0.2s;
+        }
+        .toolbar-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        .toolbar-btn.active { background: rgba(83,52,131,0.8); color: #fff; border-color: #533483; }
+
+        .viewport-stats {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            z-index: 10;
+            direction: ltr;
+            line-height: 1.8;
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .stat-label { color: #666; }
+        .stat-value { color: #ccc; font-weight: 500; }
+
+        /* Drop zone overlay */
+        .drop-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            background: rgba(17,17,17,0.95);
+            transition: opacity 0.3s;
+        }
+        .drop-overlay.hidden { display: none; }
+        .drop-overlay svg { width: 72px; height: 72px; fill: #333; margin-bottom: 20px; }
+        .drop-overlay p { font-size: 18px; color: #555; font-weight: 300; }
+        .drop-overlay .sub { font-size: 13px; color: #333; margin-top: 8px; }
+        .drop-overlay.drag-active { background: rgba(233,69,96,0.08); }
+        .drop-overlay.drag-active svg { fill: #e94560; }
+        .drop-overlay.drag-active p { color: #e94560; }
+
+        /* Loading */
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(17,17,17,0.85);
+            z-index: 100;
+            backdrop-filter: blur(4px);
+        }
+        .loading-overlay.hidden { display: none; }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid #222;
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #file-input { display: none; }
+
+        /* Nav link back */
+        .back-link {
+            color: #888;
+            text-decoration: none;
+            font-size: 12px;
+            transition: color 0.2s;
+        }
+        .back-link:hover { color: #e94560; }
+    </style>
+</head>
+<body>
+
+<input type="file" id="file-input" accept=".glb,.gltf,.obj,.stl,.ply">
+
+<!-- Sidebar -->
+<div class="sidebar">
+<div class="sidebar-inner">
+    <div class="sidebar-header">
+        <h1>Viewer</h1>
+        <a href="/" class="back-link">Remesher &larr;</a>
+    </div>
+
+    <!-- Load -->
+    <div class="panel">
+        <div class="panel-body" style="padding-top:16px">
+            <button class="btn btn-primary btn-block" onclick="document.getElementById('file-input').click()">
+                Load Model
+            </button>
+            <button class="btn btn-secondary btn-block" id="btn-export" disabled onclick="exportModel()">
+                Export GLB
+            </button>
+        </div>
+    </div>
+
+    <!-- Environment -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <h3>ENVIRONMENT</h3>
+            <span class="panel-arrow">&#9660;</span>
+        </div>
+        <div class="panel-body">
+            <div class="control-row">
+                <label>HDRI</label>
+                <select id="ctrl-hdri">
+                    <option value="studio">Studio</option>
+                    <option value="outdoor">Outdoor</option>
+                    <option value="neutral">Neutral Gray</option>
+                    <option value="dramatic">Dramatic</option>
+                </select>
+            </div>
+            <div class="control-row">
+                <label>Exposure</label>
+                <input type="range" id="ctrl-exposure" min="0.1" max="4" value="1.2" step="0.05">
+                <span class="value" id="val-exposure">1.2</span>
+            </div>
+            <div class="control-row">
+                <label>HDRI Rotation</label>
+                <input type="range" id="ctrl-env-rotation" min="0" max="360" value="0" step="1">
+                <span class="value" id="val-env-rotation">0&deg;</span>
+            </div>
+            <div class="control-row">
+                <label>Background</label>
+                <input type="color" class="color-input" id="ctrl-bg-color" value="#111111">
+                <select id="ctrl-bg-mode" style="width:100px">
+                    <option value="color">Solid Color</option>
+                    <option value="env">Show HDRI</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lighting -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <h3>LIGHTING</h3>
+            <span class="panel-arrow">&#9660;</span>
+        </div>
+        <div class="panel-body">
+            <div style="font-size:11px; color:#555; margin-bottom:4px; direction:ltr;">Scene light sources:</div>
+
+            <!-- HDRI Environment -->
+            <div style="border:1px solid #1e2d50; border-radius:6px; padding:10px; margin-bottom:2px;">
+                <div class="control-row">
+                    <label style="color:#e94560; font-weight:600;">HDRI Env</label>
+                    <div class="toggle-row">
+                        <span class="toggle-chip active" id="chip-hdri-on" onclick="toggleLight('hdri',true)">On</span>
+                        <span class="toggle-chip" id="chip-hdri-off" onclick="toggleLight('hdri',false)">Off</span>
+                    </div>
+                </div>
+                <div class="control-row">
+                    <label>Intensity</label>
+                    <input type="range" id="ctrl-env-intensity" min="0" max="3" value="1.2" step="0.05">
+                    <span class="value" id="val-env-intensity">1.2</span>
+                </div>
+            </div>
+
+            <!-- Key Light -->
+            <div style="border:1px solid #1e2d50; border-radius:6px; padding:10px; margin-bottom:2px;">
+                <div class="control-row">
+                    <label style="color:#ffe0a0; font-weight:600;">Key Light</label>
+                    <div class="toggle-row">
+                        <span class="toggle-chip active" id="chip-key-on" onclick="toggleLight('key',true)">On</span>
+                        <span class="toggle-chip" id="chip-key-off" onclick="toggleLight('key',false)">Off</span>
+                    </div>
+                </div>
+                <div class="control-row">
+                    <label>Intensity</label>
+                    <input type="range" id="ctrl-key-intensity" min="0" max="5" value="1.5" step="0.1">
+                    <span class="value" id="val-key-intensity">1.5</span>
+                </div>
+                <div class="control-row">
+                    <label>Color</label>
+                    <input type="color" class="color-input" id="ctrl-key-color" value="#fff5e6">
+                </div>
+            </div>
+
+            <!-- Fill Light -->
+            <div style="border:1px solid #1e2d50; border-radius:6px; padding:10px; margin-bottom:2px;">
+                <div class="control-row">
+                    <label style="color:#a0c0ff; font-weight:600;">Fill Light</label>
+                    <div class="toggle-row">
+                        <span class="toggle-chip active" id="chip-fill-on" onclick="toggleLight('fill',true)">On</span>
+                        <span class="toggle-chip" id="chip-fill-off" onclick="toggleLight('fill',false)">Off</span>
+                    </div>
+                </div>
+                <div class="control-row">
+                    <label>Intensity</label>
+                    <input type="range" id="ctrl-fill-intensity" min="0" max="3" value="0.6" step="0.1">
+                    <span class="value" id="val-fill-intensity">0.6</span>
+                </div>
+                <div class="control-row">
+                    <label>Color</label>
+                    <input type="color" class="color-input" id="ctrl-fill-color" value="#c8d8f0">
+                </div>
+            </div>
+
+            <!-- Rim Light -->
+            <div style="border:1px solid #1e2d50; border-radius:6px; padding:10px; margin-bottom:2px;">
+                <div class="control-row">
+                    <label style="color:#ffffff; font-weight:600;">Rim Light</label>
+                    <div class="toggle-row">
+                        <span class="toggle-chip active" id="chip-rim-on" onclick="toggleLight('rim',true)">On</span>
+                        <span class="toggle-chip" id="chip-rim-off" onclick="toggleLight('rim',false)">Off</span>
+                    </div>
+                </div>
+                <div class="control-row">
+                    <label>Intensity</label>
+                    <input type="range" id="ctrl-rim-intensity" min="0" max="3" value="0.4" step="0.1">
+                    <span class="value" id="val-rim-intensity">0.4</span>
+                </div>
+                <div class="control-row">
+                    <label>Color</label>
+                    <input type="color" class="color-input" id="ctrl-rim-color" value="#ffffff">
+                </div>
+            </div>
+
+            <!-- Ambient Light -->
+            <div style="border:1px solid #1e2d50; border-radius:6px; padding:10px; margin-bottom:2px;">
+                <div class="control-row">
+                    <label style="color:#aaaaaa; font-weight:600;">Ambient</label>
+                    <div class="toggle-row">
+                        <span class="toggle-chip active" id="chip-ambient-on" onclick="toggleLight('ambient',true)">On</span>
+                        <span class="toggle-chip" id="chip-ambient-off" onclick="toggleLight('ambient',false)">Off</span>
+                    </div>
+                </div>
+                <div class="control-row">
+                    <label>Intensity</label>
+                    <input type="range" id="ctrl-ambient" min="0" max="2" value="0.3" step="0.05">
+                    <span class="value" id="val-ambient">0.3</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Shadows -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <h3>SHADOWS</h3>
+            <span class="panel-arrow">&#9660;</span>
+        </div>
+        <div class="panel-body">
+            <div class="control-row">
+                <label>Shadows</label>
+                <div class="toggle-row">
+                    <span class="toggle-chip active" id="chip-shadow-on" onclick="setShadows(true)">On</span>
+                    <span class="toggle-chip" id="chip-shadow-off" onclick="setShadows(false)">Off</span>
+                </div>
+            </div>
+            <div class="control-row">
+                <label>Opacity</label>
+                <input type="range" id="ctrl-shadow-opacity" min="0" max="1" value="0.35" step="0.05">
+                <span class="value" id="val-shadow-opacity">0.35</span>
+            </div>
+            <div class="control-row">
+                <label>Shadow Map</label>
+                <select id="ctrl-shadow-res">
+                    <option value="1024">1024</option>
+                    <option value="2048" selected>2048</option>
+                    <option value="4096">4096</option>
+                </select>
+            </div>
+            <div class="control-row">
+                <label>SSAO</label>
+                <div class="toggle-row">
+                    <span class="toggle-chip" id="chip-ssao-on" onclick="setSSAO(true)">On</span>
+                    <span class="toggle-chip active" id="chip-ssao-off" onclick="setSSAO(false)">Off</span>
+                </div>
+            </div>
+            <div class="control-row">
+                <label>SSAO Radius</label>
+                <input type="range" id="ctrl-ssao-radius" min="1" max="64" value="16" step="1">
+                <span class="value" id="val-ssao-radius">16</span>
+            </div>
+            <div class="control-row">
+                <label>SSAO Intensity</label>
+                <input type="range" id="ctrl-ssao-intensity" min="0.01" max="0.2" value="0.05" step="0.005">
+                <span class="value" id="val-ssao-intensity">0.05</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Display -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <h3>DISPLAY</h3>
+            <span class="panel-arrow">&#9660;</span>
+        </div>
+        <div class="panel-body">
+            <div class="control-row">
+                <label>View Mode</label>
+                <select id="ctrl-view-mode">
+                    <option value="pbr" selected>PBR</option>
+                    <option value="solidWire">Topology</option>
+                    <option value="wireOverlay">PBR + Wire</option>
+                    <option value="matcap">Matcap Clay</option>
+                    <option value="normals">Normal Map</option>
+                </select>
+            </div>
+            <div class="control-row">
+                <label>Tone Mapping</label>
+                <select id="ctrl-tonemapping">
+                    <option value="aces" selected>ACES Filmic</option>
+                    <option value="reinhard">Reinhard</option>
+                    <option value="linear">Linear (None)</option>
+                    <option value="cineon">Cineon</option>
+                </select>
+            </div>
+            <div class="control-row">
+                <label>Grid</label>
+                <div class="toggle-row">
+                    <span class="toggle-chip active" id="chip-grid-on" onclick="setGrid(true)">On</span>
+                    <span class="toggle-chip" id="chip-grid-off" onclick="setGrid(false)">Off</span>
+                </div>
+            </div>
+            <div class="control-row">
+                <label>Auto Rotate</label>
+                <div class="toggle-row">
+                    <span class="toggle-chip" id="chip-rotate-on" onclick="setAutoRotate(true)">On</span>
+                    <span class="toggle-chip active" id="chip-rotate-off" onclick="setAutoRotate(false)">Off</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Material Override -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <h3>MATERIAL OVERRIDE</h3>
+            <span class="panel-arrow">&#9660;</span>
+        </div>
+        <div class="panel-body">
+            <div class="control-row">
+                <label>Override</label>
+                <div class="toggle-row">
+                    <span class="toggle-chip" id="chip-mat-on" onclick="setMatOverride(true)">On</span>
+                    <span class="toggle-chip active" id="chip-mat-off" onclick="setMatOverride(false)">Off</span>
+                </div>
+            </div>
+            <div class="control-row">
+                <label>Color</label>
+                <input type="color" class="color-input" id="ctrl-mat-color" value="#aaaaaa">
+            </div>
+            <div class="control-row">
+                <label>Roughness</label>
+                <input type="range" id="ctrl-mat-roughness" min="0" max="1" value="0.5" step="0.01">
+                <span class="value" id="val-mat-roughness">0.50</span>
+            </div>
+            <div class="control-row">
+                <label>Metalness</label>
+                <input type="range" id="ctrl-mat-metalness" min="0" max="1" value="0.0" step="0.01">
+                <span class="value" id="val-mat-metalness">0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- PBR Maps -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <h3>PBR MAPS</h3>
+            <span class="panel-arrow">&#9660;</span>
+        </div>
+        <div class="panel-body">
+            <div class="control-row">
+                <label>Isolate Map</label>
+                <select id="ctrl-isolate-map">
+                    <option value="none" selected>None (Full PBR)</option>
+                    <option value="baseColor">Base Color</option>
+                    <option value="normal">Normal</option>
+                    <option value="roughness">Roughness</option>
+                    <option value="metallic">Metallic</option>
+                    <option value="ao">Ambient Occlusion</option>
+                    <option value="emissive">Emissive</option>
+                </select>
+            </div>
+            <div class="control-row">
+                <label>Normal Scale</label>
+                <input type="range" id="ctrl-normal-scale" min="0" max="3" value="1" step="0.05">
+                <span class="value" id="val-normal-scale">1.00</span>
+            </div>
+            <div class="control-row">
+                <label>Roughness</label>
+                <input type="range" id="ctrl-roughness-factor" min="0" max="1" value="1" step="0.01">
+                <span class="value" id="val-roughness-factor">1.00</span>
+            </div>
+            <div class="control-row">
+                <label>Metalness</label>
+                <input type="range" id="ctrl-metalness-factor" min="0" max="1" value="1" step="0.01">
+                <span class="value" id="val-metalness-factor">1.00</span>
+            </div>
+            <div class="control-row">
+                <label>AO Intensity</label>
+                <input type="range" id="ctrl-ao-intensity" min="0" max="2" value="1" step="0.05">
+                <span class="value" id="val-ao-intensity">1.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shading -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <h3>SHADING</h3>
+            <span class="panel-arrow">&#9660;</span>
+        </div>
+        <div class="panel-body">
+            <div class="control-row">
+                <label>Shading</label>
+                <div class="toggle-row">
+                    <span class="toggle-chip active" id="chip-shade-smooth" onclick="setShadingMode('smooth')">Smooth</span>
+                    <span class="toggle-chip" id="chip-shade-flat" onclick="setShadingMode('flat')">Flat</span>
+                    <span class="toggle-chip" id="chip-shade-original" onclick="setShadingMode('original')">Original</span>
+                </div>
+            </div>
+            <div class="control-row">
+                <label>Double Side</label>
+                <div class="toggle-row">
+                    <span class="toggle-chip" id="chip-dside-on" onclick="setDoubleSide(true)">On</span>
+                    <span class="toggle-chip active" id="chip-dside-off" onclick="setDoubleSide(false)">Off</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div><!-- /sidebar-inner -->
+</div><!-- /sidebar -->
+
+<!-- Viewport -->
+<div class="viewport" id="viewport">
+    <canvas id="canvas"></canvas>
+
+    <div class="viewport-toolbar">
+        <button class="toolbar-btn" onclick="resetCamera()">Reset Camera</button>
+        <button class="toolbar-btn" id="btn-center" onclick="centerModel()">Center</button>
+    </div>
+
+    <div class="viewport-stats" id="viewport-stats"></div>
+
+    <div class="drop-overlay" id="drop-overlay">
+        <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+        <p>Drop a 3D model to view</p>
+        <p class="sub">GLB, glTF, OBJ, STL, PLY</p>
+    </div>
+
+    <div class="loading-overlay hidden" id="loading">
+        <div class="spinner"></div>
+    </div>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { SAOPass } from 'three/addons/postprocessing/SAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ─── State ───
+let renderer, scene, camera, controls;
+let composer, saoPass, renderPass, outputPass;
+let ssaoEnabled = false;
+let model = null;
+let originalFile = null;
+let envMap = null;
+let rawHdrTexture = null; // keep raw equirect for background + rotation
+let keyLight, fillLight, rimLight, ambientLight;
+let groundPlane, gridHelper;
+const originalMaterials = new Map();
+let matOverrideActive = false;
+let overrideMaterial = null;
+
+// ─── HDRI Environments (procedural) ───
+const HDRI_PRESETS = {
+    studio: {
+        top: new THREE.Color(0.08, 0.12, 0.25),
+        horizon: new THREE.Color(0.6, 0.55, 0.5),
+        bottom: new THREE.Color(0.25, 0.22, 0.2),
+        keyColor: 0xfff4e0, fillColor: 0xb0c8e8,
+    },
+    outdoor: {
+        top: new THREE.Color(0.15, 0.35, 0.7),
+        horizon: new THREE.Color(0.8, 0.75, 0.65),
+        bottom: new THREE.Color(0.3, 0.28, 0.22),
+        keyColor: 0xfff8e8, fillColor: 0x8ec8ff,
+    },
+    neutral: {
+        top: new THREE.Color(0.35, 0.35, 0.35),
+        horizon: new THREE.Color(0.5, 0.5, 0.5),
+        bottom: new THREE.Color(0.25, 0.25, 0.25),
+        keyColor: 0xffffff, fillColor: 0xdddddd,
+    },
+    dramatic: {
+        top: new THREE.Color(0.02, 0.02, 0.08),
+        horizon: new THREE.Color(0.15, 0.1, 0.08),
+        bottom: new THREE.Color(0.05, 0.04, 0.03),
+        keyColor: 0xffcc88, fillColor: 0x445577,
+    },
+};
+
+// ─── Init ───
+function init() {
+    const canvas = document.getElementById('canvas');
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+
+    camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+    camera.position.set(2, 1.5, 2);
+
+    controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.autoRotateSpeed = 2;
+
+    // Post-processing
+    composer = new EffectComposer(renderer);
+    renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    saoPass = new SAOPass(scene, camera);
+    saoPass.enabled = false;
+    saoPass.params.saoBias = 0.5;
+    saoPass.params.saoIntensity = 0.05;
+    saoPass.params.saoScale = 16;
+    saoPass.params.saoKernelRadius = 32;
+    saoPass.params.saoMinResolution = 0;
+    saoPass.params.saoBlur = true;
+    saoPass.params.saoBlurRadius = 4;
+    saoPass.params.saoBlurStdDev = 4;
+    saoPass.params.saoBlurDepthCutoff = 0.01;
+    composer.addPass(saoPass);
+
+    outputPass = new OutputPass();
+    composer.addPass(outputPass);
+
+    // Lights
+    ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+    scene.add(ambientLight);
+
+    keyLight = new THREE.DirectionalLight(0xfff5e6, 1.5);
+    keyLight.position.set(5, 10, 5);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.setScalar(2048);
+    keyLight.shadow.camera.near = 0.1;
+    keyLight.shadow.camera.far = 50;
+    keyLight.shadow.camera.left = -10;
+    keyLight.shadow.camera.right = 10;
+    keyLight.shadow.camera.top = 10;
+    keyLight.shadow.camera.bottom = -10;
+    keyLight.shadow.bias = -0.0005;
+    keyLight.shadow.normalBias = 0.02;
+    scene.add(keyLight);
+
+    fillLight = new THREE.DirectionalLight(0xc8d8f0, 0.6);
+    fillLight.position.set(-4, 3, -3);
+    scene.add(fillLight);
+
+    rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
+    rimLight.position.set(0, 5, -6);
+    scene.add(rimLight);
+
+    // Ground
+    const groundGeo = new THREE.PlaneGeometry(40, 40);
+    const groundMat = new THREE.ShadowMaterial({ opacity: 0.35 });
+    groundPlane = new THREE.Mesh(groundGeo, groundMat);
+    groundPlane.rotation.x = -Math.PI / 2;
+    groundPlane.receiveShadow = true;
+    scene.add(groundPlane);
+
+    // Grid
+    gridHelper = new THREE.GridHelper(10, 20, 0x333355, 0x222244);
+    scene.add(gridHelper);
+
+    // Load HDRI
+    loadHDRI('studio');
+
+    resize();
+    animate();
+}
+
+// ─── HDRI ───
+function loadHDRI(preset) {
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+
+    if (preset === 'studio') {
+        new RGBELoader().load('/studio.hdr', (hdrTexture) => {
+            hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
+            rawHdrTexture = hdrTexture;
+            // Set raw equirect as environment — Three.js r170 handles PMREM internally
+            // This allows environmentRotation to work properly
+            scene.environment = hdrTexture;
+            // Also keep a PMREM version for manual envMap assignment
+            const envRT = pmremGenerator.fromEquirectangular(hdrTexture);
+            envMap = envRT.texture;
+            pmremGenerator.dispose();
+            updateEnvDisplay();
+            refreshMaterials();
+        }, undefined, () => {
+            rawHdrTexture = null;
+            buildProceduralEnv(preset, pmremGenerator);
+        });
+    } else {
+        rawHdrTexture = null;
+        buildProceduralEnv(preset, pmremGenerator);
+    }
+}
+
+function buildProceduralEnv(preset, pmremGenerator) {
+    const p = HDRI_PRESETS[preset] || HDRI_PRESETS.studio;
+    const envS = new THREE.Scene();
+
+    const skyGeo = new THREE.SphereGeometry(50, 64, 32);
+    const skyMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: {
+            topColor: { value: p.top },
+            horizonColor: { value: p.horizon },
+            bottomColor: { value: p.bottom },
+        },
+        vertexShader: `
+            varying vec3 vWorldPos;
+            void main() {
+                vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 topColor;
+            uniform vec3 horizonColor;
+            uniform vec3 bottomColor;
+            varying vec3 vWorldPos;
+            void main() {
+                float h = normalize(vWorldPos).y;
+                vec3 col;
+                if (h > 0.0) {
+                    col = mix(horizonColor, topColor, smoothstep(0.0, 0.5, h));
+                } else {
+                    col = mix(horizonColor, bottomColor, smoothstep(0.0, -0.3, h));
+                }
+                gl_FragColor = vec4(col * 2.5, 1.0);
+            }
+        `,
+    });
+    envS.add(new THREE.Mesh(skyGeo, skyMat));
+
+    const k = new THREE.Mesh(new THREE.PlaneGeometry(12, 12),
+        new THREE.MeshBasicMaterial({ color: p.keyColor, side: THREE.DoubleSide }));
+    k.position.set(10, 14, 8); k.lookAt(0, 0, 0); envS.add(k);
+
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(18, 18),
+        new THREE.MeshBasicMaterial({ color: p.fillColor, side: THREE.DoubleSide }));
+    f.position.set(-12, 6, -6); f.lookAt(0, 0, 0); envS.add(f);
+
+    const r = new THREE.Mesh(new THREE.PlaneGeometry(5, 14),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+    r.position.set(0, 10, -14); r.lookAt(0, 0, 0); envS.add(r);
+
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(24, 24),
+        new THREE.MeshBasicMaterial({ color: 0x606058, side: THREE.DoubleSide }));
+    g.position.set(0, -6, 0); g.rotation.x = Math.PI / 2; envS.add(g);
+
+    const envRT = pmremGenerator.fromScene(envS, 0.02);
+    envMap = envRT.texture;
+    scene.environment = envMap;
+    pmremGenerator.dispose();
+    updateEnvDisplay();
+    refreshMaterials();
+}
+
+function updateEnvDisplay() {
+    const mode = document.getElementById('ctrl-bg-mode').value;
+    if (mode === 'env') {
+        if (rawHdrTexture) {
+            scene.background = rawHdrTexture;
+        } else if (envMap) {
+            scene.background = envMap;
+        }
+    } else {
+        scene.background = new THREE.Color(document.getElementById('ctrl-bg-color').value);
+    }
+}
+
+function refreshMaterials() {
+    if (!model) return;
+    const intensity = parseFloat(document.getElementById('ctrl-env-intensity').value);
+    model.traverse(child => {
+        if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(mat => {
+                if (mat.isMeshStandardMaterial) {
+                    // Don't set mat.envMap — let scene.environment handle it
+                    // so that scene.environmentRotation works
+                    mat.envMap = null;
+                    mat.envMapIntensity = intensity;
+                    mat.needsUpdate = true;
+                }
+            });
+        }
+    });
+}
+
+// ─── File Loading ───
+async function loadFile(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const url = URL.createObjectURL(file);
+    return new Promise((resolve, reject) => {
+        if (ext === 'glb' || ext === 'gltf') {
+            new GLTFLoader().load(url, gltf => resolve(gltf.scene), undefined, reject);
+        } else if (ext === 'obj') {
+            new OBJLoader().load(url, obj => resolve(obj), undefined, reject);
+        } else if (ext === 'stl') {
+            new STLLoader().load(url, geo => {
+                geo.computeVertexNormals();
+                resolve(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.5, metalness: 0 })));
+            }, undefined, reject);
+        } else if (ext === 'ply') {
+            new PLYLoader().load(url, geo => {
+                geo.computeVertexNormals();
+                resolve(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.5, metalness: 0 })));
+            }, undefined, reject);
+        } else {
+            reject(new Error('Unsupported: ' + ext));
+        }
+    });
+}
+
+async function handleFile(file) {
+    originalFile = file;
+    document.getElementById('loading').classList.remove('hidden');
+    document.getElementById('drop-overlay').classList.add('hidden');
+
+    if (model) { scene.remove(model); disposeObject(model); }
+    originalMaterials.clear();
+    matOverrideActive = false;
+
+    try {
+        model = await loadFile(file);
+        scene.add(model);
+
+        model.traverse(child => {
+            if (child.isMesh) {
+                originalMaterials.set(child.uuid, child.material);
+                child.castShadow = true;
+                child.receiveShadow = true;
+                if (child.material.isMeshStandardMaterial) {
+                    // Clear per-material envMap so scene.environment is used
+                    // This lets environmentRotation work
+                    child.material.envMap = null;
+                    child.material.envMapIntensity = parseFloat(document.getElementById('ctrl-env-intensity').value);
+                    child.material.needsUpdate = true;
+                }
+            }
+        });
+
+        storeOriginalNormals();
+        applyShading();
+
+        const box = new THREE.Box3().setFromObject(model);
+        groundPlane.position.y = box.min.y;
+        gridHelper.position.y = box.min.y;
+
+        fitCamera();
+        updateStats();
+        document.getElementById('btn-export').disabled = false;
+    } catch (e) {
+        console.error(e);
+        document.getElementById('drop-overlay').classList.remove('hidden');
+    }
+    document.getElementById('loading').classList.add('hidden');
+}
+
+function disposeObject(object) {
+    if (!object) return;
+    object.traverse(child => {
+        if (child.isMesh) {
+            if (child.geometry) child.geometry.dispose();
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(m => { if (m) { if (m.map) m.map.dispose(); m.dispose(); } });
+        }
+    });
+}
+
+function fitCamera() {
+    if (!model) return;
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const dist = maxDim * 1.8;
+    camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.6);
+    controls.target.copy(center);
+    controls.update();
+
+    const radius = maxDim * 1.5;
+    keyLight.shadow.camera.left = -radius;
+    keyLight.shadow.camera.right = radius;
+    keyLight.shadow.camera.top = radius;
+    keyLight.shadow.camera.bottom = -radius;
+    keyLight.shadow.camera.updateProjectionMatrix();
+}
+
+function updateStats() {
+    if (!model) { document.getElementById('viewport-stats').innerHTML = ''; return; }
+    let faces = 0, vertices = 0, meshes = 0;
+    model.traverse(child => {
+        if (child.isMesh && child.geometry) {
+            meshes++;
+            const geo = child.geometry;
+            if (geo.index) faces += geo.index.count / 3;
+            else if (geo.attributes.position) faces += geo.attributes.position.count / 3;
+            if (geo.attributes.position) vertices += geo.attributes.position.count;
+        }
+    });
+    faces = Math.round(faces);
+    document.getElementById('viewport-stats').innerHTML =
+        `<span class="stat-label">Faces:</span> <span class="stat-value">${faces.toLocaleString()}</span><br>` +
+        `<span class="stat-label">Vertices:</span> <span class="stat-value">${vertices.toLocaleString()}</span><br>` +
+        `<span class="stat-label">Meshes:</span> <span class="stat-value">${meshes}</span>`;
+}
+
+// ─── Controls ───
+
+// Exposure
+document.getElementById('ctrl-exposure').addEventListener('input', e => {
+    renderer.toneMappingExposure = parseFloat(e.target.value);
+    document.getElementById('val-exposure').textContent = parseFloat(e.target.value).toFixed(2);
+});
+
+// ─── Environment controls ───
+document.getElementById('ctrl-env-intensity').addEventListener('input', e => {
+    document.getElementById('val-env-intensity').textContent = parseFloat(e.target.value).toFixed(2);
+    refreshMaterials();
+});
+
+document.getElementById('ctrl-env-rotation').addEventListener('input', e => {
+    const deg = parseInt(e.target.value);
+    document.getElementById('val-env-rotation').textContent = deg + '\u00B0';
+    const rad = THREE.MathUtils.degToRad(deg);
+    // Mutate existing Euler rather than replacing (ensures dirty flag triggers)
+    scene.environmentRotation.set(0, rad, 0);
+    scene.backgroundRotation.set(0, rad, 0);
+});
+
+document.getElementById('ctrl-hdri').addEventListener('change', e => loadHDRI(e.target.value));
+document.getElementById('ctrl-bg-color').addEventListener('input', updateEnvDisplay);
+document.getElementById('ctrl-bg-mode').addEventListener('change', updateEnvDisplay);
+
+// ─── Light toggle + controls ───
+// Store saved intensities so we can restore on re-enable
+const _savedIntensities = { key: 1.5, fill: 0.6, rim: 0.4, ambient: 0.3, hdri: 1.2 };
+
+window.toggleLight = function(which, on) {
+    document.getElementById(`chip-${which}-on`).classList.toggle('active', on);
+    document.getElementById(`chip-${which}-off`).classList.toggle('active', !on);
+
+    switch (which) {
+        case 'hdri':
+            if (on) {
+                scene.environment = rawHdrTexture || envMap;
+            } else {
+                scene.environment = null;
+            }
+            break;
+        case 'key':
+            keyLight.visible = on;
+            break;
+        case 'fill':
+            fillLight.visible = on;
+            break;
+        case 'rim':
+            rimLight.visible = on;
+            break;
+        case 'ambient':
+            ambientLight.visible = on;
+            break;
+    }
+};
+
+// Key Light
+document.getElementById('ctrl-key-intensity').addEventListener('input', e => {
+    keyLight.intensity = parseFloat(e.target.value);
+    document.getElementById('val-key-intensity').textContent = parseFloat(e.target.value).toFixed(1);
+});
+document.getElementById('ctrl-key-color').addEventListener('input', e => keyLight.color.set(e.target.value));
+
+// Fill Light
+document.getElementById('ctrl-fill-intensity').addEventListener('input', e => {
+    fillLight.intensity = parseFloat(e.target.value);
+    document.getElementById('val-fill-intensity').textContent = parseFloat(e.target.value).toFixed(1);
+});
+document.getElementById('ctrl-fill-color').addEventListener('input', e => fillLight.color.set(e.target.value));
+
+// Rim Light
+document.getElementById('ctrl-rim-intensity').addEventListener('input', e => {
+    rimLight.intensity = parseFloat(e.target.value);
+    document.getElementById('val-rim-intensity').textContent = parseFloat(e.target.value).toFixed(1);
+});
+document.getElementById('ctrl-rim-color').addEventListener('input', e => rimLight.color.set(e.target.value));
+
+// Ambient
+document.getElementById('ctrl-ambient').addEventListener('input', e => {
+    ambientLight.intensity = parseFloat(e.target.value);
+    document.getElementById('val-ambient').textContent = parseFloat(e.target.value).toFixed(2);
+});
+
+// Shadows
+window.setShadows = function(on) {
+    renderer.shadowMap.enabled = on;
+    groundPlane.visible = on;
+    document.getElementById('chip-shadow-on').classList.toggle('active', on);
+    document.getElementById('chip-shadow-off').classList.toggle('active', !on);
+    scene.traverse(c => { if (c.material) c.material.needsUpdate = true; });
+};
+
+document.getElementById('ctrl-shadow-opacity').addEventListener('input', e => {
+    groundPlane.material.opacity = parseFloat(e.target.value);
+    document.getElementById('val-shadow-opacity').textContent = parseFloat(e.target.value).toFixed(2);
+});
+
+document.getElementById('ctrl-shadow-res').addEventListener('change', e => {
+    const res = parseInt(e.target.value);
+    keyLight.shadow.mapSize.setScalar(res);
+    if (keyLight.shadow.map) { keyLight.shadow.map.dispose(); keyLight.shadow.map = null; }
+});
+
+// SSAO
+window.setSSAO = function(on) {
+    ssaoEnabled = on;
+    saoPass.enabled = on;
+    document.getElementById('chip-ssao-on').classList.toggle('active', on);
+    document.getElementById('chip-ssao-off').classList.toggle('active', !on);
+};
+
+document.getElementById('ctrl-ssao-radius').addEventListener('input', e => {
+    saoPass.params.saoScale = parseFloat(e.target.value);
+    document.getElementById('val-ssao-radius').textContent = e.target.value;
+});
+
+document.getElementById('ctrl-ssao-intensity').addEventListener('input', e => {
+    saoPass.params.saoIntensity = parseFloat(e.target.value);
+    document.getElementById('val-ssao-intensity').textContent = parseFloat(e.target.value).toFixed(3);
+});
+
+// View Mode
+document.getElementById('ctrl-view-mode').addEventListener('change', e => {
+    applyViewMode(e.target.value);
+});
+
+function applyViewMode(mode) {
+    if (!model) return;
+    model.traverse(child => {
+        if (!child.isMesh) return;
+        const origMat = originalMaterials.get(child.uuid);
+        child.geometry.clearGroups();
+
+        switch (mode) {
+            case 'pbr':
+                child.material = matOverrideActive ? overrideMaterial : (origMat || child.material);
+                if (child.material.wireframe !== undefined) child.material.wireframe = false;
+                break;
+            case 'solidWire': {
+                child.material = [
+                    new THREE.MeshPhongMaterial({ color: 0x8899bb, flatShading: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
+                    new THREE.MeshBasicMaterial({ color: 0x222222, wireframe: true }),
+                ];
+                const cnt = child.geometry.index ? child.geometry.index.count : child.geometry.attributes.position.count;
+                child.geometry.addGroup(0, cnt, 0);
+                child.geometry.addGroup(0, cnt, 1);
+                break;
+            }
+            case 'wireOverlay': {
+                const tex = (origMat && origMat.clone) ? origMat.clone() : child.material;
+                tex.polygonOffset = true; tex.polygonOffsetFactor = 1; tex.polygonOffsetUnits = 1;
+                child.material = [tex, new THREE.MeshBasicMaterial({ color: 0x000000, wireframe: true })];
+                const cnt2 = child.geometry.index ? child.geometry.index.count : child.geometry.attributes.position.count;
+                child.geometry.addGroup(0, cnt2, 0);
+                child.geometry.addGroup(0, cnt2, 1);
+                break;
+            }
+            case 'matcap':
+                child.material = new THREE.MeshStandardMaterial({
+                    color: 0xccbbaa, roughness: 0.7, metalness: 0.0,
+                    envMapIntensity: 0.5,
+                });
+                break;
+            case 'normals':
+                child.material = new THREE.MeshNormalMaterial();
+                break;
+        }
+    });
+}
+
+// Tone mapping
+document.getElementById('ctrl-tonemapping').addEventListener('change', e => {
+    const map = {
+        aces: THREE.ACESFilmicToneMapping,
+        reinhard: THREE.ReinhardToneMapping,
+        linear: THREE.NoToneMapping,
+        cineon: THREE.CineonToneMapping,
+    };
+    renderer.toneMapping = map[e.target.value] || THREE.ACESFilmicToneMapping;
+    scene.traverse(c => { if (c.material) c.material.needsUpdate = true; });
+});
+
+// Grid
+window.setGrid = function(on) {
+    gridHelper.visible = on;
+    document.getElementById('chip-grid-on').classList.toggle('active', on);
+    document.getElementById('chip-grid-off').classList.toggle('active', !on);
+};
+
+// Auto rotate
+window.setAutoRotate = function(on) {
+    controls.autoRotate = on;
+    document.getElementById('chip-rotate-on').classList.toggle('active', on);
+    document.getElementById('chip-rotate-off').classList.toggle('active', !on);
+};
+
+// Material override
+window.setMatOverride = function(on) {
+    matOverrideActive = on;
+    document.getElementById('chip-mat-on').classList.toggle('active', on);
+    document.getElementById('chip-mat-off').classList.toggle('active', !on);
+    updateOverrideMaterial();
+    applyViewMode(document.getElementById('ctrl-view-mode').value);
+};
+
+function updateOverrideMaterial() {
+    overrideMaterial = new THREE.MeshStandardMaterial({
+        color: document.getElementById('ctrl-mat-color').value,
+        roughness: parseFloat(document.getElementById('ctrl-mat-roughness').value),
+        metalness: parseFloat(document.getElementById('ctrl-mat-metalness').value),
+        envMapIntensity: parseFloat(document.getElementById('ctrl-env-intensity').value),
+    });
+}
+
+document.getElementById('ctrl-mat-color').addEventListener('input', () => {
+    if (matOverrideActive) { updateOverrideMaterial(); applyViewMode('pbr'); }
+});
+document.getElementById('ctrl-mat-roughness').addEventListener('input', e => {
+    document.getElementById('val-mat-roughness').textContent = parseFloat(e.target.value).toFixed(2);
+    if (matOverrideActive) { updateOverrideMaterial(); applyViewMode('pbr'); }
+});
+document.getElementById('ctrl-mat-metalness').addEventListener('input', e => {
+    document.getElementById('val-mat-metalness').textContent = parseFloat(e.target.value).toFixed(2);
+    if (matOverrideActive) { updateOverrideMaterial(); applyViewMode('pbr'); }
+});
+
+// ─── PBR Maps ───
+
+// Isolate single map
+document.getElementById('ctrl-isolate-map').addEventListener('change', e => {
+    const mapType = e.target.value;
+    if (!model) return;
+
+    model.traverse(child => {
+        if (!child.isMesh) return;
+        const origMat = originalMaterials.get(child.uuid);
+        if (!origMat || !origMat.isMeshStandardMaterial) return;
+
+        child.geometry.clearGroups();
+
+        if (mapType === 'none') {
+            // Restore original PBR
+            child.material = origMat;
+            return;
+        }
+
+        let tex = null;
+        switch (mapType) {
+            case 'baseColor': tex = origMat.map; break;
+            case 'normal': tex = origMat.normalMap; break;
+            case 'roughness': tex = origMat.roughnessMap; break;
+            case 'metallic': tex = origMat.metalnessMap; break;
+            case 'ao': tex = origMat.aoMap; break;
+            case 'emissive': tex = origMat.emissiveMap; break;
+        }
+
+        if (tex) {
+            child.material = new THREE.MeshBasicMaterial({ map: tex });
+        } else {
+            child.material = new THREE.MeshBasicMaterial({ color: 0x222222 });
+        }
+    });
+});
+
+// PBR map sliders — modify original materials live
+document.getElementById('ctrl-normal-scale').addEventListener('input', e => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('val-normal-scale').textContent = val.toFixed(2);
+    if (!model) return;
+    model.traverse(child => {
+        if (!child.isMesh) return;
+        const mat = originalMaterials.get(child.uuid);
+        if (mat && mat.isMeshStandardMaterial && mat.normalMap) {
+            mat.normalScale.set(val, val);
+        }
+    });
+});
+
+document.getElementById('ctrl-roughness-factor').addEventListener('input', e => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('val-roughness-factor').textContent = val.toFixed(2);
+    if (!model) return;
+    model.traverse(child => {
+        if (!child.isMesh) return;
+        const mat = originalMaterials.get(child.uuid);
+        if (mat && mat.isMeshStandardMaterial) {
+            mat.roughness = val;
+        }
+    });
+});
+
+document.getElementById('ctrl-metalness-factor').addEventListener('input', e => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('val-metalness-factor').textContent = val.toFixed(2);
+    if (!model) return;
+    model.traverse(child => {
+        if (!child.isMesh) return;
+        const mat = originalMaterials.get(child.uuid);
+        if (mat && mat.isMeshStandardMaterial) {
+            mat.metalness = val;
+        }
+    });
+});
+
+document.getElementById('ctrl-ao-intensity').addEventListener('input', e => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('val-ao-intensity').textContent = val.toFixed(2);
+    if (!model) return;
+    model.traverse(child => {
+        if (!child.isMesh) return;
+        const mat = originalMaterials.get(child.uuid);
+        if (mat && mat.isMeshStandardMaterial) {
+            mat.aoMapIntensity = val;
+        }
+    });
+});
+
+// ─── Shading ───
+const _originalNormals = new Map();
+let _shadingMode = 'smooth';
+
+function storeOriginalNormals() {
+    if (!model) return;
+    _originalNormals.clear();
+    model.traverse(child => {
+        if (child.isMesh && child.geometry && child.geometry.attributes.normal) {
+            _originalNormals.set(child.uuid, new Float32Array(child.geometry.attributes.normal.array));
+        }
+    });
+}
+
+function applyShading() {
+    if (!model) return;
+    model.traverse(child => {
+        if (!child.isMesh || !child.geometry) return;
+        const geo = child.geometry;
+        const origArr = _originalNormals.get(child.uuid);
+        if (origArr && geo.attributes.normal) {
+            geo.attributes.normal.array.set(origArr);
+            geo.attributes.normal.needsUpdate = true;
+        }
+        if (_shadingMode === 'smooth') {
+            geo.computeVertexNormals();
+        }
+        if (child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(m => {
+                if (m.flatShading !== undefined) {
+                    m.flatShading = (_shadingMode === 'flat');
+                    m.needsUpdate = true;
+                }
+            });
+        }
+    });
+}
+
+window.setShadingMode = function(mode) {
+    _shadingMode = mode;
+    document.getElementById('chip-shade-smooth').classList.toggle('active', mode === 'smooth');
+    document.getElementById('chip-shade-flat').classList.toggle('active', mode === 'flat');
+    document.getElementById('chip-shade-original').classList.toggle('active', mode === 'original');
+    applyShading();
+};
+
+window.setDoubleSide = function(on) {
+    document.getElementById('chip-dside-on').classList.toggle('active', on);
+    document.getElementById('chip-dside-off').classList.toggle('active', !on);
+    if (!model) return;
+    model.traverse(child => {
+        if (!child.isMesh || !child.material) return;
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(m => { m.side = on ? THREE.DoubleSide : THREE.FrontSide; m.needsUpdate = true; });
+    });
+};
+
+// Camera
+window.resetCamera = function() {
+    camera.position.set(2, 1.5, 2);
+    controls.target.set(0, 0, 0);
+    controls.update();
+};
+window.centerModel = function() { fitCamera(); };
+
+// Export
+window.exportModel = function() {
+    if (!model) return;
+    const exporter = new GLTFExporter();
+    exporter.parse(model, (result) => {
+        const blob = new Blob([result], { type: 'model/gltf-binary' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (originalFile ? originalFile.name.replace(/\.[^.]+$/, '') : 'model') + '_viewer.glb';
+        a.click();
+        URL.revokeObjectURL(url);
+    }, undefined, { binary: true });
+};
+
+// Panel collapse
+window.togglePanel = function(header) {
+    header.parentElement.classList.toggle('collapsed');
+};
+
+// ─── Drag & Drop ───
+const viewport = document.getElementById('viewport');
+viewport.addEventListener('dragover', e => {
+    e.preventDefault();
+    document.getElementById('drop-overlay').classList.remove('hidden');
+    document.getElementById('drop-overlay').classList.add('drag-active');
+});
+viewport.addEventListener('dragleave', () => {
+    document.getElementById('drop-overlay').classList.remove('drag-active');
+    if (model) document.getElementById('drop-overlay').classList.add('hidden');
+});
+viewport.addEventListener('drop', e => {
+    e.preventDefault();
+    document.getElementById('drop-overlay').classList.remove('drag-active');
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+document.getElementById('file-input').addEventListener('change', e => {
+    if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+// ─── Resize & Animate ───
+function resize() {
+    const vp = document.getElementById('viewport');
+    const w = vp.clientWidth;
+    const h = vp.clientHeight;
+    renderer.setSize(w, h);
+    composer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    // Use composer (includes SSAO) when SSAO enabled, otherwise direct render
+    if (ssaoEnabled) {
+        composer.render();
+    } else {
+        renderer.render(scene, camera);
+    }
+}
+
+window.addEventListener('resize', resize);
+init();
+
+</script>
+</body>
+</html>

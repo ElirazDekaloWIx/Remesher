@@ -1,0 +1,13 @@
+trimesh[easy]>=4.0.0
+pymeshlab>=2023.12
+numpy
+pygltflib
+pillow
+tqdm
+click
+flask>=3.0
+waitress>=3.0
+robust-laplacian
+scipy
+pytest>=8.0
+pytest-cov>=5.0

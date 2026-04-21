@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remesher Web — Client-Side 3D Optimizer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            background: #16213e;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #0f3460;
+            flex-shrink: 0;
+        }
+        .header h1 { font-size: 20px; color: #e94560; font-weight: 700; }
+        .header .badge {
+            font-size: 11px;
+            background: #0a8754;
+            padding: 3px 8px;
+            border-radius: 10px;
+            margin-inline-start: 10px;
+            vertical-align: middle;
+        }
+        .header-controls { display: flex; gap: 12px; align-items: center; }
+
+        .controls {
+            background: #16213e;
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid #0f3460;
+            flex-shrink: 0;
+        }
+        .control-group { display: flex; align-items: center; gap: 8px; }
+        .control-group label { font-size: 13px; color: #aaa; white-space: nowrap; }
+        select, input[type="number"] {
+            background: #0f3460;
+            color: #eee;
+            border: 1px solid #533483;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 13px;
+            outline: none;
+        }
+        select:focus, input:focus { border-color: #e94560; }
+        input[type="range"] { width: 120px; accent-color: #e94560; }
+        input[type="checkbox"] { accent-color: #e94560; }
+
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: #e94560; color: white; }
+        .btn-primary:hover { background: #c73652; }
+        .btn-primary:disabled { background: #555; cursor: not-allowed; }
+        .btn-secondary { background: #533483; color: white; }
+        .btn-secondary:hover { background: #6a4299; }
+        .btn-export { background: #0a8754; color: white; }
+        .btn-export:hover { background: #0b6b43; }
+        .btn-export:disabled { background: #555; cursor: not-allowed; }
+
+        .viewer-container { flex: 1; display: flex; position: relative; overflow: hidden; }
+        .viewer-panel { flex: 1; position: relative; }
+        .viewer-panel canvas { display: block; }
+        .viewer-label {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: rgba(0,0,0,0.7);
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            z-index: 10;
+            direction: ltr;
+        }
+        .viewer-stats {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            background: rgba(0,0,0,0.7);
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 10;
+            direction: ltr;
+            line-height: 1.6;
+            max-width: 340px;
+        }
+        .divider { width: 3px; background: #e94560; flex-shrink: 0; z-index: 20; }
+
+        .drop-zone {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed #533483;
+            border-radius: 16px;
+            margin: 40px;
+            transition: all 0.3s;
+            text-align: center;
+            padding: 20px;
+        }
+        .drop-zone.active { border-color: #e94560; background: rgba(233,69,96,0.1); }
+        .drop-zone svg { width: 64px; height: 64px; fill: #533483; margin-bottom: 16px; }
+        .drop-zone p { font-size: 16px; color: #888; }
+        .drop-zone .formats { font-size: 12px; color: #555; margin-top: 8px; }
+        .drop-zone .note { font-size: 11px; color: #0a8754; margin-top: 14px; }
+
+        .progress-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(26,26,46,0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        .progress-overlay.hidden { display: none; }
+        .spinner {
+            width: 48px; height: 48px;
+            border: 4px solid #333;
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .progress-text { margin-top: 16px; font-size: 14px; color: #aaa; }
+
+        .reduction-badge {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #e94560;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: 700;
+            z-index: 30;
+            pointer-events: none;
+            direction: ltr;
+        }
+        .reduction-badge.hidden { display: none; }
+
+        #file-input { display: none; }
+
+        .toast-container {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            direction: ltr;
+        }
+        .toast {
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: white;
+            max-width: 400px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .toast.error { background: #c73652; }
+        .toast.success { background: #0a8754; }
+        .toast.info { background: #0f3460; }
+
+        /* Materials side panel */
+        .materials-panel {
+            position: absolute;
+            top: 0; right: 0; bottom: 0;
+            width: 340px;
+            background: #141428;
+            border-inline-start: 1px solid #0f3460;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            transform: translateX(100%);
+            transition: transform 0.25s ease;
+        }
+        .materials-panel.open { transform: translateX(0); }
+        html[dir="rtl"] .materials-panel { right: auto; left: 0; transform: translateX(-100%); }
+        html[dir="rtl"] .materials-panel.open { transform: translateX(0); }
+
+        .materials-header {
+            padding: 12px 16px;
+            background: #16213e;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .materials-header h3 { font-size: 14px; color: #e94560; }
+        .materials-search {
+            padding: 10px 16px;
+            background: #16213e;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+        .materials-search input {
+            flex: 1;
+            min-width: 120px;
+            background: #0f3460;
+            color: #eee;
+            border: 1px solid #533483;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 13px;
+            outline: none;
+            direction: ltr;
+        }
+        .materials-grid {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            align-content: start;
+        }
+        .material-card {
+            background: #0f3460;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.15s;
+            position: relative;
+        }
+        .material-card:hover { border-color: #e94560; }
+        .material-card.active { border-color: #0a8754; }
+        .material-card img {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            display: block;
+            background: #0a0a1a;
+        }
+        .material-card .name {
+            padding: 6px 8px;
+            font-size: 11px;
+            color: #aaa;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
+            direction: ltr;
+        }
+        .close-btn {
+            background: transparent;
+            border: none;
+            color: #aaa;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 0 6px;
+        }
+        .close-btn:hover { color: #e94560; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>
+            Remesher Web
+            <span class="badge">100% CLIENT-SIDE</span>
+        </h1>
+        <div class="header-controls">
+            <button class="btn btn-secondary" id="materials-btn" disabled>חומרים (Poly Haven)</button>
+            <button class="btn btn-secondary" id="load-btn">טען קובץ</button>
+            <button class="btn btn-primary" id="process-btn" disabled>עבד</button>
+            <button class="btn btn-export" id="export-btn" disabled>ייצוא GLB</button>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label>Preset:</label>
+            <select id="preset">
+                <option value="mobile">Mobile (3K)</option>
+                <option value="web" selected>Web (10K)</option>
+                <option value="desktop">Desktop (30K)</option>
+                <option value="high">High (50K)</option>
+                <option value="custom">Custom</option>
+            </select>
+        </div>
+        <div class="control-group" id="custom-target-group" style="display:none">
+            <label>Target Faces:</label>
+            <input type="number" id="target-faces" value="10000" min="100" step="1000">
+        </div>
+        <div class="control-group">
+            <label>Quality: <span id="quality-val">7</span></label>
+            <input type="range" id="quality" min="0" max="10" value="7" step="1">
+        </div>
+        <div class="control-group">
+            <label><input type="checkbox" id="do-optimize" checked> דחוס טקסטורות</label>
+        </div>
+        <div class="control-group">
+            <label>Max Texture:</label>
+            <select id="max-tex">
+                <option value="512">512</option>
+                <option value="1024">1024</option>
+                <option value="2048" selected>2048</option>
+                <option value="4096">4096</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>JPEG Q: <span id="jq-val">80</span></label>
+            <input type="range" id="jpeg-q" min="40" max="95" value="80" step="5">
+        </div>
+        <div class="control-group">
+            <label><input type="checkbox" id="do-smooth" checked> Normal Smooth</label>
+        </div>
+        <div class="control-group">
+            <label>Crease: <span id="crease-val">30</span>°</label>
+            <input type="range" id="crease-angle" min="0" max="180" value="30" step="5">
+        </div>
+        <div class="control-group">
+            <label>Env:</label>
+            <select id="env-select">
+                <option value="studio_small_09">Studio</option>
+                <option value="courtyard" selected>Courtyard</option>
+                <option value="venice_sunset">Sunset</option>
+                <option value="kloofendal_43d_clear_puresky">Sky</option>
+                <option value="neutral">Neutral (no HDRI)</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Exposure: <span id="exp-val">1.0</span></label>
+            <input type="range" id="exposure" min="0.1" max="3" value="1.0" step="0.1">
+        </div>
+    </div>
+
+    <div class="viewer-container">
+        <div class="viewer-panel" id="original-panel">
+            <div class="viewer-label">מקור</div>
+            <div class="viewer-stats" id="original-stats">לא נטען קובץ</div>
+        </div>
+        <div class="divider"></div>
+        <div class="viewer-panel" id="processed-panel">
+            <div class="viewer-label">מעובד</div>
+            <div class="viewer-stats" id="processed-stats">—</div>
+            <div class="progress-overlay hidden" id="progress">
+                <div class="spinner"></div>
+                <div class="progress-text" id="progress-text">מעבד...</div>
+            </div>
+            <div class="reduction-badge hidden" id="reduction-badge"></div>
+        </div>
+    </div>
+
+    <div class="drop-zone" id="drop-zone" style="display:flex">
+        <svg viewBox="0 0 24 24"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+        <p>גרור קובץ GLB/GLTF לכאן, או לחץ לבחירה</p>
+        <p class="formats">נתמך: .glb, .gltf</p>
+        <p class="note">✓ הכל רץ בדפדפן שלך. שום דבר לא עולה לשרת.</p>
+        <input type="file" id="file-input" accept=".glb,.gltf">
+    </div>
+
+    <!-- Poly Haven materials side panel -->
+    <div class="materials-panel" id="materials-panel">
+        <div class="materials-header">
+            <h3>Poly Haven Materials</h3>
+            <button class="close-btn" id="materials-close">✕</button>
+        </div>
+        <div class="materials-search">
+            <input type="text" id="mat-search" placeholder="search... (wood, metal, fabric)">
+            <select id="mat-category">
+                <option value="">All</option>
+                <option value="wood">Wood</option>
+                <option value="metal">Metal</option>
+                <option value="fabric">Fabric</option>
+                <option value="stone">Stone</option>
+                <option value="concrete">Concrete</option>
+                <option value="plaster">Plaster</option>
+                <option value="brick">Brick</option>
+                <option value="terrazzo">Terrazzo</option>
+                <option value="leather">Leather</option>
+                <option value="plastic">Plastic</option>
+            </select>
+            <select id="mat-res" title="Resolution">
+                <option value="1k" selected>1K</option>
+                <option value="2k">2K</option>
+                <option value="4k">4K</option>
+            </select>
+            <button class="btn btn-secondary" id="mat-clear" style="padding:5px 10px;font-size:11px">Remove</button>
+        </div>
+        <div class="materials-grid" id="materials-grid">
+            <div style="grid-column:1/-1;text-align:center;color:#666;padding:20px;font-size:12px">
+                טוען רשימת חומרים...
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://esm.sh/three@0.160.0",
+        "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/",
+        "@gltf-transform/core": "https://esm.sh/@gltf-transform/core@4.1.0",
+        "@gltf-transform/extensions": "https://esm.sh/@gltf-transform/extensions@4.1.0",
+        "@gltf-transform/functions": "https://esm.sh/@gltf-transform/functions@4.1.0",
+        "meshoptimizer": "https://esm.sh/meshoptimizer@0.22.0"
+      }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+        import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+        import { WebIO, PropertyType } from '@gltf-transform/core';
+        import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
+        import { simplify, weld, dedup, prune, textureCompress, resample } from '@gltf-transform/functions';
+        import { MeshoptSimplifier } from 'meshoptimizer';
+
+        const POLY_HAVEN_API = 'https://api.polyhaven.com';
+
+        const PRESETS = { mobile: 3000, web: 10000, desktop: 30000, high: 50000 };
+
+        // --- Toasts ---
+        const toastContainer = document.getElementById('toast-container');
+        function toast(msg, type = 'info') {
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.textContent = msg;
+            toastContainer.appendChild(el);
+            setTimeout(() => el.remove(), 5000);
+        }
+
+        // --- Three.js setup (dual scenes with PBR + HDRI) ---
+        function setupScene(panelId) {
+            const panel = document.getElementById(panelId);
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+
+            const w = panel.clientWidth || 800;
+            const h = panel.clientHeight || 600;
+            const camera = new THREE.PerspectiveCamera(45, w / h, 0.01, 1000);
+            camera.position.set(3, 2, 3);
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(w, h);
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            panel.appendChild(renderer.domElement);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.1;
+
+            // PMREM generator for IBL
+            const pmrem = new THREE.PMREMGenerator(renderer);
+            pmrem.compileEquirectangularShader();
+
+            // Neutral fallback environment (from RoomEnvironment)
+            const roomEnv = new RoomEnvironment();
+            const neutralEnv = pmrem.fromScene(roomEnv, 0.04).texture;
+            scene.environment = neutralEnv;
+
+            // Soft key light for shadows (environment handles diffuse)
+            const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            keyLight.position.set(5, 8, 6);
+            keyLight.castShadow = true;
+            keyLight.shadow.mapSize.set(1024, 1024);
+            keyLight.shadow.camera.near = 0.1;
+            keyLight.shadow.camera.far = 50;
+            keyLight.shadow.camera.left = -10;
+            keyLight.shadow.camera.right = 10;
+            keyLight.shadow.camera.top = 10;
+            keyLight.shadow.camera.bottom = -10;
+            keyLight.shadow.bias = -0.0005;
+            keyLight.shadow.normalBias = 0.02;
+            scene.add(keyLight);
+
+            // Ground plane for shadows
+            const groundGeo = new THREE.PlaneGeometry(50, 50);
+            const groundMat = new THREE.ShadowMaterial({ opacity: 0.35 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            let model = null;
+
+            function setModel(gltfScene) {
+                if (model) {
+                    scene.remove(model);
+                    model.traverse(o => {
+                        if (o.geometry) o.geometry.dispose();
+                        if (o.material) {
+                            const mats = Array.isArray(o.material) ? o.material : [o.material];
+                            mats.forEach(m => {
+                                Object.values(m).forEach(v => { if (v && v.isTexture) v.dispose(); });
+                                m.dispose();
+                            });
+                        }
+                    });
+                }
+                model = gltfScene;
+                model.traverse(o => {
+                    if (o.isMesh) {
+                        o.castShadow = true;
+                        o.receiveShadow = true;
+                    }
+                });
+                scene.add(model);
+
+                // Frame the model + place ground under it
+                const box = new THREE.Box3().setFromObject(model);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+                model.position.sub(center);
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const dist = maxDim * 2;
+                camera.position.set(dist, dist * 0.6, dist);
+                camera.lookAt(0, 0, 0);
+                controls.target.set(0, 0, 0);
+                controls.update();
+
+                // Place ground at the bottom of the model
+                ground.position.y = -size.y / 2;
+
+                // Move key light to scale
+                keyLight.position.set(maxDim * 1.2, maxDim * 2, maxDim * 1.5);
+                keyLight.shadow.camera.left = -maxDim * 1.5;
+                keyLight.shadow.camera.right = maxDim * 1.5;
+                keyLight.shadow.camera.top = maxDim * 1.5;
+                keyLight.shadow.camera.bottom = -maxDim * 1.5;
+                keyLight.shadow.camera.updateProjectionMatrix();
+            }
+
+            function setEnvironment(envTexture, showBackground) {
+                scene.environment = envTexture || neutralEnv;
+                scene.background = showBackground && envTexture ? envTexture : new THREE.Color(0x1a1a2e);
+            }
+
+            function getModel() { return model; }
+            function setExposure(v) { renderer.toneMappingExposure = v; }
+
+            function resize() {
+                const w = panel.clientWidth;
+                const h = panel.clientHeight;
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
+                renderer.setSize(w, h);
+            }
+
+            (function animate() {
+                requestAnimationFrame(animate);
+                controls.update();
+                renderer.render(scene, camera);
+            })();
+
+            return { scene, camera, renderer, pmrem, setModel, setEnvironment, setExposure, getModel, resize };
+        }
+
+        const originalView = setupScene('original-panel');
+        const processedView = setupScene('processed-panel');
+        window.addEventListener('resize', () => {
+            originalView.resize();
+            processedView.resize();
+        });
+
+        // --- HDRI environment loading (from Poly Haven CDN) ---
+        const HDRI_URL_BASE = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k';
+        const envCache = new Map();
+        async function loadEnvironment(name) {
+            if (name === 'neutral') {
+                originalView.setEnvironment(null, false);
+                processedView.setEnvironment(null, false);
+                return;
+            }
+            if (envCache.has(name)) {
+                const tex = envCache.get(name);
+                originalView.setEnvironment(tex, true);
+                processedView.setEnvironment(tex, true);
+                return;
+            }
+            try {
+                const url = `${HDRI_URL_BASE}/${name}_1k.hdr`;
+                const hdr = await new RGBELoader().loadAsync(url);
+                hdr.mapping = THREE.EquirectangularReflectionMapping;
+                const envTex = originalView.pmrem.fromEquirectangular(hdr).texture;
+                hdr.dispose();
+                envCache.set(name, envTex);
+                originalView.setEnvironment(envTex, true);
+                processedView.setEnvironment(envTex, true);
+            } catch (e) {
+                console.warn('HDRI load failed:', e);
+                toast('טעינת סביבה נכשלה, משתמש בברירת מחדל', 'info');
+            }
+        }
+
+        // --- File loading ---
+        const dropZone = document.getElementById('drop-zone');
+        const viewerContainer = document.querySelector('.viewer-container');
+        const fileInput = document.getElementById('file-input');
+        const loadBtn = document.getElementById('load-btn');
+        const processBtn = document.getElementById('process-btn');
+        const exportBtn = document.getElementById('export-btn');
+
+        let originalBytes = null;
+        let originalFilename = 'model.glb';
+        let processedBytes = null;
+        let originalFaceCount = 0;
+        let originalSizeBytes = 0;
+
+        function countFaces(object3D) {
+            let total = 0;
+            object3D.traverse(o => {
+                if (o.isMesh && o.geometry) {
+                    const g = o.geometry;
+                    if (g.index) total += g.index.count / 3;
+                    else if (g.attributes.position) total += g.attributes.position.count / 3;
+                }
+            });
+            return Math.round(total);
+        }
+
+        function formatSize(bytes) {
+            if (bytes > 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+            return (bytes / 1024).toFixed(0) + ' KB';
+        }
+
+        async function loadFile(file) {
+            originalFilename = file.name.replace(/\.gltf$/i, '.glb');
+            originalBytes = new Uint8Array(await file.arrayBuffer());
+            originalSizeBytes = originalBytes.byteLength;
+
+            const loader = new GLTFLoader();
+            const url = URL.createObjectURL(new Blob([originalBytes]));
+            try {
+                const gltf = await loader.loadAsync(url);
+                originalView.setModel(gltf.scene);
+                originalFaceCount = countFaces(gltf.scene);
+
+                document.getElementById('original-stats').innerHTML =
+                    `${originalFilename}<br>Faces: ${originalFaceCount.toLocaleString()}<br>Size: ${formatSize(originalSizeBytes)}`;
+
+                dropZone.style.display = 'none';
+                viewerContainer.style.display = 'flex';
+                processBtn.disabled = false;
+                materialsBtn.disabled = false;
+                // Apply current crease-angle setting immediately
+                applyCreasedNormals(originalView.getModel(), currentCreaseAngle, doSmoothToggle.checked);
+                toast('נטען בהצלחה', 'success');
+            } catch (e) {
+                toast('טעינה נכשלה: ' + e.message, 'error');
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        }
+
+        loadBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', e => {
+            if (e.target.files[0]) loadFile(e.target.files[0]);
+        });
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('active'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('active');
+            if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+        });
+
+        // Allow drop anywhere to reload
+        document.body.addEventListener('dragover', e => e.preventDefault());
+        document.body.addEventListener('drop', e => {
+            e.preventDefault();
+            if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+        });
+
+        // Start visible with drop zone
+        viewerContainer.style.display = 'none';
+
+        // --- Control wiring ---
+        document.getElementById('preset').addEventListener('change', e => {
+            document.getElementById('custom-target-group').style.display =
+                e.target.value === 'custom' ? 'flex' : 'none';
+        });
+        document.getElementById('quality').addEventListener('input', e => {
+            document.getElementById('quality-val').textContent = e.target.value;
+        });
+        document.getElementById('jpeg-q').addEventListener('input', e => {
+            document.getElementById('jq-val').textContent = e.target.value;
+        });
+
+        // Crease angle — update label + re-apply to models in both views if loaded
+        const creaseSlider = document.getElementById('crease-angle');
+        const doSmoothToggle = document.getElementById('do-smooth');
+        let currentCreaseAngle = parseFloat(creaseSlider.value);
+
+        function applyCreasedNormals(root, angleDegrees, enabled) {
+            if (!root) return;
+            const angleRad = angleDegrees * Math.PI / 180;
+            root.traverse(o => {
+                if (!o.isMesh || !o.geometry) return;
+                // Stash original geometry once, so we can restore / re-apply
+                if (!o.userData._origGeometry) {
+                    o.userData._origGeometry = o.geometry.clone();
+                }
+                if (!enabled) {
+                    if (o.geometry !== o.userData._origGeometry) {
+                        o.geometry.dispose();
+                        o.geometry = o.userData._origGeometry.clone();
+                    }
+                    return;
+                }
+                try {
+                    const src = o.userData._origGeometry;
+                    // toCreasedNormals requires a non-indexed geometry with a position attribute
+                    const nonIndexed = src.index ? src.toNonIndexed() : src.clone();
+                    const creased = toCreasedNormals(nonIndexed, angleRad);
+                    if (o.geometry !== o.userData._origGeometry) o.geometry.dispose();
+                    o.geometry = creased;
+                    nonIndexed.dispose();
+                } catch (e) {
+                    console.warn('crease normals failed for mesh', o.name, e);
+                }
+            });
+        }
+
+        function applyCreaseToAll() {
+            applyCreasedNormals(originalView.getModel(), currentCreaseAngle, doSmoothToggle.checked);
+            applyCreasedNormals(processedView.getModel(), currentCreaseAngle, doSmoothToggle.checked);
+        }
+
+        creaseSlider.addEventListener('input', e => {
+            currentCreaseAngle = parseFloat(e.target.value);
+            document.getElementById('crease-val').textContent = e.target.value;
+        });
+        creaseSlider.addEventListener('change', applyCreaseToAll);
+        doSmoothToggle.addEventListener('change', applyCreaseToAll);
+
+        // Environment selector
+        document.getElementById('env-select').addEventListener('change', e => {
+            loadEnvironment(e.target.value);
+        });
+
+        // Exposure
+        document.getElementById('exposure').addEventListener('input', e => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('exp-val').textContent = v.toFixed(1);
+            originalView.setExposure(v);
+            processedView.setExposure(v);
+        });
+
+        // Load initial environment
+        loadEnvironment(document.getElementById('env-select').value);
+
+        // --- Poly Haven materials ---
+        const materialsPanel = document.getElementById('materials-panel');
+        const materialsGrid = document.getElementById('materials-grid');
+        const materialsBtn = document.getElementById('materials-btn');
+        const materialsClose = document.getElementById('materials-close');
+        const matSearch = document.getElementById('mat-search');
+        const matCategory = document.getElementById('mat-category');
+        const matRes = document.getElementById('mat-res');
+        const matClear = document.getElementById('mat-clear');
+
+        let polyHavenAssets = null;
+        let activeMaterialId = null;
+        let originalMaterials = new WeakMap(); // mesh -> original material
+
+        async function fetchPolyHavenAssets() {
+            if (polyHavenAssets) return polyHavenAssets;
+            const res = await fetch(`${POLY_HAVEN_API}/assets?t=textures`);
+            polyHavenAssets = await res.json();
+            return polyHavenAssets;
+        }
+
+        function renderMaterialGrid(filterText, filterCategory) {
+            if (!polyHavenAssets) return;
+            materialsGrid.innerHTML = '';
+            const q = (filterText || '').toLowerCase().trim();
+            const entries = Object.entries(polyHavenAssets);
+            let shown = 0;
+            for (const [id, asset] of entries) {
+                if (filterCategory && !(asset.categories || []).includes(filterCategory)) continue;
+                if (q && !id.toLowerCase().includes(q) && !(asset.name || '').toLowerCase().includes(q)) continue;
+                const card = document.createElement('div');
+                card.className = 'material-card' + (id === activeMaterialId ? ' active' : '');
+                card.dataset.id = id;
+                card.innerHTML = `
+                    <img loading="lazy" src="https://cdn.polyhaven.com/asset_img/thumbs/${id}.png?width=200&height=200" alt="">
+                    <div class="name">${asset.name || id}</div>
+                `;
+                card.addEventListener('click', () => applyPolyHavenMaterial(id));
+                materialsGrid.appendChild(card);
+                shown++;
+                if (shown >= 60) break; // pagination — keep DOM light
+            }
+            if (shown === 0) {
+                materialsGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#666;padding:20px;font-size:12px">אין תוצאות</div>';
+            }
+        }
+
+        async function applyPolyHavenMaterial(id) {
+            setProgress(`טוען חומר ${id}...`);
+            const res = parseInt(matRes.value.replace('k', ''), 10);
+            const resKey = `${res}k`;
+            try {
+                const filesRes = await fetch(`${POLY_HAVEN_API}/files/${id}`);
+                const files = await filesRes.json();
+
+                const loader = new THREE.TextureLoader();
+                loader.crossOrigin = 'anonymous';
+
+                async function loadMap(mapKey, colorSpace) {
+                    const entry = files[mapKey];
+                    if (!entry) return null;
+                    const resEntry = entry[resKey] || entry['1k'] || Object.values(entry)[0];
+                    if (!resEntry) return null;
+                    // Prefer jpg over png for speed
+                    const urlEntry = resEntry.jpg || resEntry.png || Object.values(resEntry)[0];
+                    if (!urlEntry || !urlEntry.url) return null;
+                    const tex = await loader.loadAsync(urlEntry.url);
+                    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                    if (colorSpace) tex.colorSpace = colorSpace;
+                    return tex;
+                }
+
+                const [diff, nor, rough, ao, disp] = await Promise.all([
+                    loadMap('Diffuse', THREE.SRGBColorSpace).catch(() => null),
+                    loadMap('nor_gl', THREE.NoColorSpace).catch(() => null),
+                    loadMap('Rough', THREE.NoColorSpace).catch(() => null),
+                    loadMap('AO', THREE.NoColorSpace).catch(() => null),
+                    loadMap('Displacement', THREE.NoColorSpace).catch(() => null),
+                ]);
+
+                const newMat = new THREE.MeshStandardMaterial({
+                    map: diff,
+                    normalMap: nor,
+                    roughnessMap: rough,
+                    aoMap: ao,
+                    displacementMap: disp,
+                    displacementScale: 0,
+                    roughness: 1.0,
+                    metalness: 0.0,
+                });
+
+                function applyToView(view) {
+                    const root = view.getModel();
+                    if (!root) return;
+                    root.traverse(o => {
+                        if (o.isMesh) {
+                            if (!originalMaterials.has(o)) originalMaterials.set(o, o.material);
+                            o.material = newMat;
+                        }
+                    });
+                }
+                applyToView(originalView);
+                applyToView(processedView);
+
+                activeMaterialId = id;
+                // refresh active highlight
+                materialsGrid.querySelectorAll('.material-card').forEach(c => {
+                    c.classList.toggle('active', c.dataset.id === id);
+                });
+                toast(`חומר ${id} הוחל`, 'success');
+            } catch (e) {
+                console.error(e);
+                toast('טעינת חומר נכשלה: ' + e.message, 'error');
+            } finally {
+                hideProgress();
+            }
+        }
+
+        function clearMaterialOverride() {
+            function restore(view) {
+                const root = view.getModel();
+                if (!root) return;
+                root.traverse(o => {
+                    if (o.isMesh && originalMaterials.has(o)) {
+                        o.material = originalMaterials.get(o);
+                    }
+                });
+            }
+            restore(originalView);
+            restore(processedView);
+            activeMaterialId = null;
+            materialsGrid.querySelectorAll('.material-card').forEach(c => c.classList.remove('active'));
+            toast('חומר הוסר', 'info');
+        }
+
+        materialsBtn.addEventListener('click', async () => {
+            materialsPanel.classList.add('open');
+            try {
+                await fetchPolyHavenAssets();
+                renderMaterialGrid(matSearch.value, matCategory.value);
+            } catch (e) {
+                materialsGrid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:#c73652;padding:20px;font-size:12px">טעינה נכשלה: ${e.message}</div>`;
+            }
+        });
+        materialsClose.addEventListener('click', () => materialsPanel.classList.remove('open'));
+        matSearch.addEventListener('input', () => renderMaterialGrid(matSearch.value, matCategory.value));
+        matCategory.addEventListener('change', () => renderMaterialGrid(matSearch.value, matCategory.value));
+        matClear.addEventListener('click', clearMaterialOverride);
+
+        // --- Processing pipeline ---
+        const progressOverlay = document.getElementById('progress');
+        const progressText = document.getElementById('progress-text');
+
+        function setProgress(msg) {
+            progressOverlay.classList.remove('hidden');
+            progressText.textContent = msg;
+        }
+        function hideProgress() { progressOverlay.classList.add('hidden'); }
+
+        async function processModel() {
+            if (!originalBytes) return;
+            processBtn.disabled = true;
+            exportBtn.disabled = true;
+
+            try {
+                setProgress('מאתחל WASM...');
+                await MeshoptSimplifier.ready;
+
+                const preset = document.getElementById('preset').value;
+                const customTarget = parseInt(document.getElementById('target-faces').value, 10);
+                const qualitySlider = parseInt(document.getElementById('quality').value, 10);
+                // UI: 0 = tight, 10 = loose — meshopt error = (10 - slider) / 100
+                const targetError = (10 - qualitySlider) / 100;
+                const doOptimize = document.getElementById('do-optimize').checked;
+                const maxTex = parseInt(document.getElementById('max-tex').value, 10);
+                const jpegQ = parseInt(document.getElementById('jpeg-q').value, 10);
+
+                setProgress('טוען GLB ל-gltf-transform...');
+                const io = new WebIO().registerExtensions(ALL_EXTENSIONS);
+                const doc = await io.readBinary(originalBytes);
+
+                // Clean
+                setProgress('ניקוי: weld + dedup...');
+                await doc.transform(weld({ tolerance: 0.0001 }), dedup());
+
+                // Decimate each mesh
+                setProgress('דצימציה (QEM)...');
+                const totalTarget = preset === 'custom' ? customTarget : PRESETS[preset];
+
+                // Compute total faces first to scale per-mesh
+                let sceneFaces = 0;
+                for (const mesh of doc.getRoot().listMeshes()) {
+                    for (const prim of mesh.listPrimitives()) {
+                        const indices = prim.getIndices();
+                        if (indices) sceneFaces += indices.getCount() / 3;
+                        else {
+                            const pos = prim.getAttribute('POSITION');
+                            if (pos) sceneFaces += pos.getCount() / 3;
+                        }
+                    }
+                }
+                const ratio = sceneFaces > 0 ? Math.min(1, totalTarget / sceneFaces) : 1;
+
+                await doc.transform(simplify({
+                    simplifier: MeshoptSimplifier,
+                    ratio,
+                    error: targetError,
+                    lockBorder: true,
+                }));
+
+                // Optimize textures
+                if (doOptimize) {
+                    setProgress('דוחס טקסטורות...');
+                    try {
+                        await doc.transform(textureCompress({
+                            targetFormat: 'webp',
+                            resize: [maxTex, maxTex],
+                            quality: jpegQ,
+                        }));
+                    } catch (e) {
+                        console.warn('webp compress failed, falling back to jpeg', e);
+                        try {
+                            await doc.transform(textureCompress({
+                                targetFormat: 'jpeg',
+                                resize: [maxTex, maxTex],
+                                quality: jpegQ,
+                            }));
+                        } catch (e2) {
+                            console.warn('texture compress failed', e2);
+                        }
+                    }
+                }
+
+                setProgress('prune...');
+                await doc.transform(prune());
+
+                setProgress('שומר GLB...');
+                processedBytes = await io.writeBinary(doc);
+
+                // Preview in right panel
+                setProgress('טוען תצוגה מקדימה...');
+                const loader = new GLTFLoader();
+                const url = URL.createObjectURL(new Blob([processedBytes]));
+                const gltf = await loader.loadAsync(url);
+                URL.revokeObjectURL(url);
+                processedView.setModel(gltf.scene);
+                // Apply current crease-angle to processed view too
+                applyCreasedNormals(processedView.getModel(), currentCreaseAngle, doSmoothToggle.checked);
+                // Re-apply active Poly Haven material if one is selected
+                if (activeMaterialId) {
+                    applyPolyHavenMaterial(activeMaterialId).catch(() => {});
+                }
+
+                const processedFaces = countFaces(gltf.scene);
+                const processedSize = processedBytes.byteLength;
+                const faceReduction = originalFaceCount > 0
+                    ? (1 - processedFaces / originalFaceCount) * 100 : 0;
+                const sizeReduction = originalSizeBytes > 0
+                    ? (1 - processedSize / originalSizeBytes) * 100 : 0;
+
+                document.getElementById('processed-stats').innerHTML =
+                    `Faces: ${processedFaces.toLocaleString()} (-${faceReduction.toFixed(1)}%)<br>` +
+                    `Size: ${formatSize(processedSize)} (-${sizeReduction.toFixed(1)}%)`;
+
+                const badge = document.getElementById('reduction-badge');
+                badge.textContent = `-${faceReduction.toFixed(0)}% faces`;
+                badge.classList.remove('hidden');
+                setTimeout(() => badge.classList.add('hidden'), 2500);
+
+                toast(`הושלם: ${faceReduction.toFixed(1)}% פחות פוליגונים`, 'success');
+                exportBtn.disabled = false;
+            } catch (e) {
+                console.error(e);
+                toast('עיבוד נכשל: ' + e.message, 'error');
+            } finally {
+                processBtn.disabled = false;
+                hideProgress();
+            }
+        }
+
+        processBtn.addEventListener('click', processModel);
+
+        exportBtn.addEventListener('click', () => {
+            if (!processedBytes) return;
+            const blob = new Blob([processedBytes], { type: 'model/gltf-binary' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const base = originalFilename.replace(/\.glb$/i, '');
+            a.download = `${base}_remeshed.glb`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        });
+    </script>
+</body>
+</html>

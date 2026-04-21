@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remesher - Batch Processing</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            background: #16213e;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #0f3460;
+            flex-shrink: 0;
+        }
+        .header h1 { font-size: 20px; color: #e94560; font-weight: 700; }
+        .header-controls { display: flex; gap: 12px; align-items: center; }
+        .btn {
+            padding: 8px 20px; border: none; border-radius: 6px;
+            font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-primary { background: #e94560; color: white; }
+        .btn-primary:hover { background: #c73652; }
+        .btn-primary:disabled { background: #555; cursor: not-allowed; }
+        .btn-secondary { background: #533483; color: white; }
+        .btn-secondary:hover { background: #6a4299; }
+        .btn-danger { background: #c0392b; color: white; }
+        .btn-danger:hover { background: #a93226; }
+
+        .main { flex: 1; display: flex; overflow: hidden; }
+
+        /* Sidebar */
+        .sidebar {
+            width: 340px; background: #16213e; padding: 20px;
+            border-left: 1px solid #0f3460; overflow-y: auto; flex-shrink: 0;
+            display: flex; flex-direction: column; gap: 16px;
+        }
+        .sidebar h2 { font-size: 15px; color: #e94560; margin-bottom: 4px; }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field label { font-size: 12px; color: #aaa; }
+        .field input, .field select {
+            background: #0f3460; color: #eee; border: 1px solid #533483;
+            border-radius: 6px; padding: 8px 12px; font-size: 13px; outline: none;
+            width: 100%;
+        }
+        .field input:focus, .field select:focus { border-color: #e94560; }
+        .field-row { display: flex; gap: 10px; }
+        .field-row .field { flex: 1; }
+        .folder-input {
+            display: flex; gap: 8px;
+        }
+        .folder-input input { flex: 1; }
+
+        /* File list */
+        .file-list-area {
+            flex: 1; display: flex; flex-direction: column; overflow: hidden;
+        }
+        .file-list-header {
+            background: #16213e; padding: 12px 20px;
+            border-bottom: 1px solid #0f3460;
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .file-list-header span { font-size: 13px; color: #aaa; }
+        .file-list {
+            flex: 1; overflow-y: auto; padding: 0;
+            direction: ltr;
+        }
+        .file-item {
+            display: flex; align-items: center; padding: 10px 20px;
+            border-bottom: 1px solid #0f346033; font-size: 13px;
+            transition: background 0.15s;
+        }
+        .file-item:hover { background: #16213e44; }
+        .file-item .path { flex: 1; color: #ccc; font-family: 'Consolas', monospace; font-size: 12px; }
+        .file-item .size { color: #888; font-size: 11px; min-width: 70px; text-align: right; margin: 0 12px; }
+        .file-item .status {
+            min-width: 80px; text-align: center; font-size: 11px;
+            padding: 3px 8px; border-radius: 4px; font-weight: 600;
+        }
+        .status-pending { color: #888; }
+        .status-processing { color: #f39c12; background: #f39c1222; }
+        .status-ok { color: #2ecc71; background: #2ecc7122; }
+        .status-error { color: #e74c3c; background: #e74c3c22; }
+        .file-item .faces { color: #aaa; font-size: 11px; min-width: 140px; text-align: right; }
+
+        /* Progress bar */
+        .batch-progress {
+            background: #16213e; padding: 14px 20px;
+            border-top: 1px solid #0f3460; flex-shrink: 0;
+            display: none;
+        }
+        .batch-progress.active { display: block; }
+        .progress-bar-bg {
+            background: #0f3460; border-radius: 6px; height: 8px; overflow: hidden; margin-top: 8px;
+        }
+        .progress-bar-fill {
+            background: #e94560; height: 100%; border-radius: 6px;
+            transition: width 0.3s ease;
+        }
+        .progress-info {
+            display: flex; justify-content: space-between; font-size: 12px; color: #aaa;
+        }
+
+        /* Empty state */
+        .empty-state {
+            flex: 1; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; color: #555;
+        }
+        .empty-state svg { width: 64px; height: 64px; fill: #333; margin-bottom: 16px; }
+        .empty-state p { font-size: 14px; }
+
+        /* Toast */
+        .toast-container {
+            position: fixed; top: 16px; right: 16px; z-index: 1000;
+            display: flex; flex-direction: column; gap: 8px; direction: ltr;
+        }
+        .toast {
+            padding: 12px 20px; border-radius: 8px; font-size: 13px; font-weight: 500;
+            color: white; max-width: 400px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            animation: toastIn 0.3s ease, toastOut 0.3s ease 4.7s forwards;
+        }
+        .toast-error { background: #c0392b; }
+        .toast-success { background: #0a8754; }
+        @keyframes toastIn { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }
+        @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+    </style>
+</head>
+<body>
+
+<div class="toast-container" id="toast-container"></div>
+
+<div class="header">
+    <h1>Remesher — Batch</h1>
+    <div class="header-controls">
+        <a href="/" class="btn btn-secondary" style="text-decoration:none">Single Mode</a>
+    </div>
+</div>
+
+<div class="main">
+    <!-- Sidebar: settings -->
+    <div class="sidebar">
+        <h2>Input Folder</h2>
+        <div class="field">
+            <div class="folder-input">
+                <input type="text" id="input-folder" placeholder="C:\path\to\models">
+                <button class="btn btn-secondary" onclick="browseFolder('input-folder', true)" style="padding:8px 14px;" title="Browse...">...</button>
+            </div>
+        </div>
+
+        <h2>Output Folder</h2>
+        <div class="field">
+            <div class="folder-input">
+                <input type="text" id="output-folder" placeholder="C:\path\to\output">
+                <button class="btn btn-secondary" onclick="browseFolder('output-folder', false)" style="padding:8px 14px;" title="Browse...">...</button>
+            </div>
+        </div>
+
+        <h2>Mode</h2>
+        <div class="field">
+            <select id="batch-mode" onchange="toggleBatchMode()">
+                <option value="remesh" selected>Remesh (Reduce Polygons)</option>
+                <option value="optimize">Optimize Weight (Compress Textures)</option>
+                <option value="remesh-optimize">Remesh + Optimize (Both)</option>
+            </select>
+        </div>
+
+        <!-- Remesh params -->
+        <div id="remesh-params">
+            <h2>Remesh Parameters</h2>
+            <div class="field">
+                <label>Preset</label>
+                <select id="preset">
+                    <option value="mobile">Mobile (3K)</option>
+                    <option value="web" selected>Web Game (10K)</option>
+                    <option value="desktop">Desktop (30K)</option>
+                    <option value="high">High Quality (50K)</option>
+                    <option value="custom">Custom</option>
+                </select>
+            </div>
+            <div class="field" id="custom-group" style="display:none">
+                <label>Target Faces</label>
+                <input type="number" id="target-faces" value="10000" min="100" max="500000" step="100">
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label>Quality: <span id="quality-val">0.3</span></label>
+                    <input type="range" id="quality" min="1" max="9" value="3" step="1" style="width:100%; accent-color:#e94560;">
+                </div>
+            </div>
+            <div class="field">
+                <label>UV Unwrap</label>
+                <select id="uv-method">
+                    <option value="keep" selected>Keep Original</option>
+                    <option value="xatlas">xatlas (Fast, Packed)</option>
+                    <option value="lscm">LSCM (Smooth Flow)</option>
+                    <option value="arap">ARAP (Best Quality)</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>Texture Size</label>
+                <select id="texture-size">
+                    <option value="512">512</option>
+                    <option value="1024">1024</option>
+                    <option value="2048" selected>2048</option>
+                    <option value="4096">4096</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Optimize params -->
+        <div id="optimize-params" style="display:none">
+            <h2>Optimize Parameters</h2>
+            <div class="field">
+                <label>JPEG Quality: <span id="jpeg-q-val">80</span></label>
+                <input type="range" id="jpeg-quality" min="30" max="100" value="80" step="5" style="width:100%; accent-color:#2980b9;">
+            </div>
+            <div class="field">
+                <label>Max Texture Size</label>
+                <select id="max-texture-size">
+                    <option value="512">512</option>
+                    <option value="1024">1024</option>
+                    <option value="2048" selected>2048</option>
+                    <option value="4096">4096</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="margin-top: auto; display: flex; gap: 10px;">
+            <button class="btn btn-primary" id="btn-start" disabled onclick="startBatch()" style="flex:1">
+                Start Processing
+            </button>
+            <button class="btn btn-danger" id="btn-cancel" style="display:none" onclick="cancelBatch()">
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <!-- Main area: file list -->
+    <div class="file-list-area">
+        <div class="file-list-header">
+            <span id="file-count">No files scanned</span>
+            <span id="batch-timer" style="font-variant-numeric: tabular-nums;"></span>
+        </div>
+
+        <div class="file-list" id="file-list">
+            <div class="empty-state" id="empty-state">
+                <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                <p>Enter an input folder path and click Scan</p>
+            </div>
+        </div>
+
+        <div class="batch-progress" id="batch-progress">
+            <div class="progress-info">
+                <span id="progress-label">Processing...</span>
+                <span id="progress-pct">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progress-fill" style="width: 0%"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let scannedFiles = [];
+let inputFolder = '';
+let batchRunning = false;
+let pollInterval = null;
+let timerInterval = null;
+let timerStart = 0;
+
+function showToast(msg, type) {
+    const c = document.getElementById('toast-container');
+    const t = document.createElement('div');
+    t.className = 'toast toast-' + type;
+    t.textContent = msg;
+    c.appendChild(t);
+    setTimeout(() => t.remove(), 5000);
+}
+
+// Mode toggle
+function toggleBatchMode() {
+    const mode = document.getElementById('batch-mode').value;
+    document.getElementById('remesh-params').style.display = (mode === 'remesh' || mode === 'remesh-optimize') ? 'block' : 'none';
+    document.getElementById('optimize-params').style.display = (mode === 'optimize' || mode === 'remesh-optimize') ? 'block' : 'none';
+}
+
+// Preset change
+document.getElementById('preset').addEventListener('change', e => {
+    document.getElementById('custom-group').style.display = e.target.value === 'custom' ? 'block' : 'none';
+});
+document.getElementById('quality').addEventListener('input', e => {
+    document.getElementById('quality-val').textContent = (e.target.value / 10).toFixed(1);
+});
+document.getElementById('jpeg-quality').addEventListener('input', e => {
+    document.getElementById('jpeg-q-val').textContent = e.target.value;
+});
+
+// Browse folder via native Windows dialog
+async function browseFolder(inputId, autoScan) {
+    try {
+        const resp = await fetch('/api/browse-folder', { method: 'POST' });
+        const data = await resp.json();
+        if (data.folder) {
+            document.getElementById(inputId).value = data.folder;
+            if (autoScan) scanFolder();
+        }
+    } catch (e) {
+        showToast('Failed to open folder dialog', 'error');
+    }
+}
+
+// Scan folder
+async function scanFolder() {
+    const folder = document.getElementById('input-folder').value.trim();
+    if (!folder) { showToast('Enter a folder path', 'error'); return; }
+
+    try {
+        const resp = await fetch('/api/batch/scan', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ folder }),
+        });
+        const data = await resp.json();
+        if (data.error) { showToast(data.error, 'error'); return; }
+
+        inputFolder = data.folder;
+        scannedFiles = data.files;
+        renderFileList();
+        document.getElementById('file-count').textContent = `${data.total} files found`;
+        document.getElementById('btn-start').disabled = data.total === 0;
+        document.getElementById('empty-state')?.remove();
+    } catch (e) {
+        showToast('Scan failed: ' + e.message, 'error');
+    }
+}
+
+function renderFileList() {
+    const list = document.getElementById('file-list');
+    list.innerHTML = '';
+    for (const f of scannedFiles) {
+        const div = document.createElement('div');
+        div.className = 'file-item';
+        div.id = 'file-' + sanitizeId(f.path);
+        div.innerHTML = `
+            <span class="path">${f.path}</span>
+            <span class="size">${f.size_mb} MB</span>
+            <span class="faces" id="faces-${sanitizeId(f.path)}"></span>
+            <span class="status status-pending" id="status-${sanitizeId(f.path)}">Pending</span>
+        `;
+        list.appendChild(div);
+    }
+}
+
+function sanitizeId(path) {
+    return path.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+// Start batch
+async function startBatch() {
+    const outputFolder = document.getElementById('output-folder').value.trim();
+    if (!outputFolder) { showToast('Enter an output folder path', 'error'); return; }
+    if (!scannedFiles.length) { showToast('No files to process', 'error'); return; }
+
+    const batchMode = document.getElementById('batch-mode').value;
+    const preset = document.getElementById('preset').value;
+    const params = {
+        input_folder: inputFolder,
+        output_folder: outputFolder,
+        files: scannedFiles.map(f => f.path),
+        mode: batchMode,
+    };
+
+    if (batchMode === 'remesh' || batchMode === 'remesh-optimize') {
+        params.preset = preset;
+        params.quality = document.getElementById('quality').value / 10;
+        params.uv_method = document.getElementById('uv-method').value;
+        params.texture_size = parseInt(document.getElementById('texture-size').value);
+        if (preset === 'custom') {
+            params.target_faces = parseInt(document.getElementById('target-faces').value);
+        }
+    }
+    if (batchMode === 'optimize' || batchMode === 'remesh-optimize') {
+        params.jpeg_quality = parseInt(document.getElementById('jpeg-quality').value);
+        params.max_texture_size = parseInt(document.getElementById('max-texture-size').value);
+    }
+
+    try {
+        const resp = await fetch('/api/batch/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params),
+        });
+        const data = await resp.json();
+        if (data.error) { showToast(data.error, 'error'); return; }
+
+        batchRunning = true;
+        document.getElementById('btn-start').disabled = true;
+        document.getElementById('btn-cancel').style.display = 'block';
+        document.getElementById('batch-progress').classList.add('active');
+
+        // Reset statuses
+        for (const f of scannedFiles) {
+            const id = sanitizeId(f.path);
+            const el = document.getElementById('status-' + id);
+            if (el) { el.textContent = 'Pending'; el.className = 'status status-pending'; }
+            const fEl = document.getElementById('faces-' + id);
+            if (fEl) fEl.textContent = '';
+        }
+
+        timerStart = performance.now();
+        timerInterval = setInterval(() => {
+            const s = ((performance.now() - timerStart) / 1000).toFixed(0);
+            document.getElementById('batch-timer').textContent = s + 's';
+        }, 500);
+
+        pollInterval = setInterval(pollBatchStatus, 800);
+    } catch (e) {
+        showToast('Failed to start batch: ' + e.message, 'error');
+    }
+}
+
+async function pollBatchStatus() {
+    try {
+        const resp = await fetch('/api/batch/status');
+        const data = await resp.json();
+
+        const pct = data.total > 0 ? Math.round((data.completed / data.total) * 100) : 0;
+        document.getElementById('progress-fill').style.width = pct + '%';
+        document.getElementById('progress-pct').textContent = pct + '%';
+        document.getElementById('progress-label').textContent = data.current_file
+            ? `Processing: ${data.current_file}`
+            : (data.running ? 'Processing...' : 'Done');
+
+        // Update individual file statuses
+        for (const r of data.results) {
+            const id = sanitizeId(r.file);
+            const el = document.getElementById('status-' + id);
+            const fEl = document.getElementById('faces-' + id);
+            if (el) {
+                if (r.status === 'ok') {
+                    el.textContent = `-${r.reduction_pct}%`;
+                    el.className = 'status status-ok';
+                } else {
+                    el.textContent = 'Error';
+                    el.className = 'status status-error';
+                    el.title = r.error || '';
+                }
+            }
+            if (fEl && r.status === 'ok') {
+                if (r.original_size) {
+                    const origMB = (r.original_size / 1024 / 1024).toFixed(2);
+                    const finalMB = (r.final_size / 1024 / 1024).toFixed(2);
+                    fEl.textContent = `${origMB} MB → ${finalMB} MB`;
+                } else {
+                    fEl.textContent = `${r.original_faces.toLocaleString()} → ${r.final_faces.toLocaleString()}`;
+                }
+            }
+        }
+
+        // Mark current file as processing
+        if (data.current_file) {
+            const id = sanitizeId(data.current_file);
+            const el = document.getElementById('status-' + id);
+            if (el && el.className.includes('pending')) {
+                el.textContent = 'Processing...';
+                el.className = 'status status-processing';
+                // Scroll to current
+                document.getElementById('file-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        if (!data.running) {
+            clearInterval(pollInterval);
+            clearInterval(timerInterval);
+            batchRunning = false;
+            document.getElementById('btn-start').disabled = false;
+            document.getElementById('btn-cancel').style.display = 'none';
+
+            const ok = data.results.filter(r => r.status === 'ok').length;
+            const fail = data.results.filter(r => r.status === 'error').length;
+            const elapsed = ((performance.now() - timerStart) / 1000).toFixed(1);
+            showToast(`Batch complete: ${ok} succeeded, ${fail} failed (${elapsed}s)`, fail > 0 ? 'error' : 'success');
+        }
+    } catch (e) {
+        // Ignore poll errors
+    }
+}
+
+async function cancelBatch() {
+    try {
+        await fetch('/api/batch/cancel', { method: 'POST' });
+        showToast('Cancelling...', 'error');
+    } catch (e) {}
+}
+
+// Enter key on folder inputs
+document.getElementById('input-folder').addEventListener('keydown', e => {
+    if (e.key === 'Enter') scanFolder();
+});
+</script>
+</body>
+</html>
