@@ -860,8 +860,6 @@ window.remeshModel = async function() {
             formData.append('smooth_iterations', document.getElementById('smooth-iterations').value);
             if (preset === 'custom') {
                 formData.append('target_faces', document.getElementById('target-faces').value);
-            } else {
-                formData.append('ratio', ratio);
             }
             const resp = await fetch('/api/remesh', { method: 'POST', body: formData });
             if (!resp.ok) throw new Error(await resp.text());
@@ -984,8 +982,6 @@ window.remeshAndOptimize = async function() {
         formData.append('smooth_iterations', document.getElementById('smooth-iterations').value);
         if (preset === 'custom') {
             formData.append('target_faces', document.getElementById('target-faces').value);
-        } else {
-            formData.append('ratio', ratio);
         }
 
         const resp = await fetch('/api/remesh-optimize', { method: 'POST', body: formData });
