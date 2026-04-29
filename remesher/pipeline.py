@@ -1,15 +1,22 @@
-"""Core remeshing pipeline: clean -> decimate -> validate."""
+"""Core remeshing pipeline: clean -> decimate -> validate.
+
+The pymeshlab work runs in a subprocess (`remesher._meshlab_worker`) so a
+native segfault on a pathological mesh returns a clean error instead of
+killing the Flask server.
+"""
 
 import os
+import sys
+import json
 import time
 import tempfile
 import logging
+import subprocess
 from pathlib import Path
 from dataclasses import dataclass
 
 import numpy as np
 import trimesh
-import pymeshlab
 
 logger = logging.getLogger(__name__)
 
@@ -46,64 +53,45 @@ def get_target_faces(preset: str | None, target_faces: int | None, ratio: float 
     return min(PRESETS["web"], current_faces)
 
 
-def _clean_mesh(ms: pymeshlab.MeshSet):
-    """Pre-cleaning steps."""
-    ms.meshing_remove_duplicate_vertices()
-    ms.meshing_remove_duplicate_faces()
-    ms.meshing_remove_null_faces()
-    try:
-        ms.meshing_repair_non_manifold_edges()
-    except Exception:
-        pass
-    try:
-        ms.meshing_repair_non_manifold_vertices()
-    except Exception:
-        pass
+class MeshlabWorkerError(RuntimeError):
+    """Raised when the pymeshlab subprocess fails (including native crashes)."""
 
 
-def _decimate_mesh(ms: pymeshlab.MeshSet, target_faces: int, has_texture: bool, quality_thr: float):
-    """Run QEM decimation."""
-    if has_texture:
+def _run_meshlab_worker(params: dict, timeout_s: int = 600) -> None:
+    """Execute the pymeshlab pipeline in an isolated subprocess.
+
+    A native segfault produces a non-zero exit code (often 139/-11 on
+    POSIX, 0xC0000005 on Windows) which we surface as a clean exception.
+    """
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump(params, f)
+        params_path = f.name
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "remesher._meshlab_worker", params_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    finally:
         try:
-            ms.meshing_decimation_quadric_edge_collapse_with_texture(
-                targetfacenum=target_faces,
-                qualitythr=quality_thr,
-                preserveboundary=True,
-                optimalplacement=True,
-                planarquadric=True,
-            )
-            return
-        except Exception as e:
-            logger.warning(f"Texture-aware decimation failed, falling back to standard: {e}")
+            os.unlink(params_path)
+        except OSError:
+            pass
 
-    ms.meshing_decimation_quadric_edge_collapse(
-        targetfacenum=target_faces,
-        qualitythr=quality_thr,
-        preserveboundary=True,
-        preservenormal=True,
-        preservetopology=True,
-        optimalplacement=True,
-        planarquadric=True,
-    )
-
-
-def _smooth_mesh(ms: pymeshlab.MeshSet, method: str = "laplacian", iterations: int = 3):
-    """Apply smoothing to reduce decimation artifacts."""
-    if method == "laplacian":
-        ms.apply_coord_laplacian_smoothing(
-            stepsmoothnum=iterations,
-            boundary=True,
-            cotangentweight=True,
+    if proc.stderr:
+        for line in proc.stderr.splitlines():
+            logger.info(f"  [meshlab] {line}")
+    if proc.returncode != 0:
+        crash = (
+            "native crash" if proc.returncode in (-11, 139, 3221225477) else f"exit {proc.returncode}"
         )
-    elif method == "taubin":
-        ms.apply_coord_taubin_smoothing(
-            stepsmoothnum=iterations,
-            lambda_=0.5,
-            mu=-0.53,
+        last_err = (proc.stderr.strip().splitlines() or [""])[-1]
+        raise MeshlabWorkerError(
+            f"pymeshlab worker failed ({crash}) — {last_err or 'no stderr'}"
         )
-    else:
-        return
-    logger.info(f"  Applied {method} smoothing ({iterations} iterations)")
 
 
 def _has_uv(geometry: trimesh.Trimesh) -> bool:
@@ -144,20 +132,15 @@ def process_single_mesh(
 
         mesh.export(tmp_in, file_type="obj")
 
-        ms = pymeshlab.MeshSet()
-        ms.load_new_mesh(tmp_in)
-
-        _clean_mesh(ms)
-        _decimate_mesh(ms, target_faces, has_texture, quality_thr)
-
-        # Apply smoothing after decimation
-        if smooth_method and smooth_method != "none":
-            _smooth_mesh(ms, smooth_method, smooth_iterations)
-
-        ms.compute_normal_per_vertex()
-        ms.compute_normal_per_face()
-
-        ms.save_current_mesh(tmp_out)
+        _run_meshlab_worker({
+            "input": tmp_in,
+            "output": tmp_out,
+            "target_faces": int(target_faces),
+            "quality": float(quality_thr),
+            "has_texture": bool(has_texture),
+            "smooth_method": smooth_method or "none",
+            "smooth_iterations": int(smooth_iterations),
+        })
 
         decimated = trimesh.load(tmp_out, process=False, force="mesh")
 
@@ -201,6 +184,25 @@ def process_file(
     except Exception as e:
         return RemeshResult(input_path, output_path, 0, 0, 0, False, str(e))
 
+    try:
+        return _process_loaded(
+            loaded, input_path, output_path,
+            preset, target_faces, ratio, quality_thr, _cb,
+            uv_method, texture_size, smooth_method, smooth_iterations,
+        )
+    except MeshlabWorkerError as e:
+        logger.error(f"Decimation failed: {e}")
+        return RemeshResult(input_path, output_path, 0, 0, 0, False, f"Decimation failed: {e}")
+    except Exception as e:
+        logger.exception("Unexpected pipeline error")
+        return RemeshResult(input_path, output_path, 0, 0, 0, False, str(e))
+
+
+def _process_loaded(
+    loaded, input_path, output_path,
+    preset, target_faces, ratio, quality_thr, _cb,
+    uv_method, texture_size, smooth_method, smooth_iterations,
+) -> RemeshResult:
     total_original = 0
     total_final = 0
 
