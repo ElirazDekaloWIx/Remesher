@@ -601,13 +601,12 @@
                 // Place ground at the bottom of the model
                 ground.position.y = -size.y / 2;
 
-                // Move key light to scale
-                keyLight.position.set(maxDim * 1.2, maxDim * 2, maxDim * 1.5);
-                keyLight.shadow.camera.left = -maxDim * 1.5;
-                keyLight.shadow.camera.right = maxDim * 1.5;
-                keyLight.shadow.camera.top = maxDim * 1.5;
-                keyLight.shadow.camera.bottom = -maxDim * 1.5;
-                keyLight.shadow.camera.updateProjectionMatrix();
+                // Scale the main light's shadow frustum to the model
+                mainLight.shadow.camera.left = -maxDim * 1.5;
+                mainLight.shadow.camera.right = maxDim * 1.5;
+                mainLight.shadow.camera.top = maxDim * 1.5;
+                mainLight.shadow.camera.bottom = -maxDim * 1.5;
+                mainLight.shadow.camera.updateProjectionMatrix();
             }
 
             function setEnvironment(envTexture, showBackground) {
